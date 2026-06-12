@@ -4,7 +4,7 @@
   "description": "Avalon ",
   "appid": "wx46be70e368a2dfd5",
   "setting": {
-    "urlCheck": true,
+    "urlCheck": false,
     "es6": false,
     "enhance": false,
     "compileHotReLoad": false,

@@ -4,6 +4,7 @@ import { useLoad } from '@tarojs/taro'
 import { login, getToken } from '../../utils/auth'
 import { request } from '../../utils/request'
 import { connectSocket, sendMessage, onMessage } from '../../utils/socket'
+import { ClientEvent } from '@avalon/shared'
 import './index.scss'
 
 export default function Index () {
@@ -51,10 +52,10 @@ export default function Index () {
     }
   }
 
-  // 进一个测试房间，再发一条聊天，验证「发消息 → 广播回来」
-  const handleJoinAndChat = () => {
-    sendMessage({ type: 'JOIN', roomId: 'TEST' })
-    sendMessage({ type: 'CHAT', text: 'hello avalon' })
+  // 进一个测试房间，验证「发消息 → 服务端 → 广播回来」
+  const handleJoinRoom = () => {
+    sendMessage(ClientEvent.JOIN_ROOM, { roomId: 'TEST' })
+    sendMessage(ClientEvent.PING, {})
   }
 
   return (
@@ -70,7 +71,7 @@ export default function Index () {
 
       <View style={{ marginTop: '20px' }}>
         <Button onClick={handleConnect}>连接 WebSocket</Button>
-        <Button onClick={handleJoinAndChat} style={{ marginTop: '12px' }}>
+        <Button onClick={handleJoinRoom} style={{ marginTop: '12px' }}>
           进房间 TEST 并发消息
         </Button>
       </View>

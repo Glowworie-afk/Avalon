@@ -1,5 +1,6 @@
 import Taro from '@tarojs/taro'
 import { getToken } from './request'
+import { makeMessage, type Message, type EventType } from '@avalon/shared'
 
 /**
  * WebSocket 封装（对应 Day 1）。
@@ -13,7 +14,7 @@ import { getToken } from './request'
 // 与后端保持一致：本地 ws://localhost:3000，上线换成 wss://你的域名
 const WS_BASE = 'ws://localhost:3000'
 
-type Listener = (msg: any) => void
+type Listener = (msg: Message) => void
 
 let task: Taro.SocketTask | null = null
 const listeners = new Set<Listener>()
@@ -36,7 +37,7 @@ export function connectSocket(): Promise<Taro.SocketTask> {
         })
 
         socketTask.onMessage((res) => {
-          let msg: any
+          let msg: Message
           try {
             msg = JSON.parse(res.data as string)
           } catch {
@@ -62,13 +63,13 @@ export function connectSocket(): Promise<Taro.SocketTask> {
   })
 }
 
-/** 发送一条消息（对象会自动 JSON 序列化） */
-export function sendMessage(msg: object): void {
+/** 按统一信封发送一条消息 */
+export function sendMessage<T>(type: EventType, payload: T): void {
   if (!task) {
     console.warn('[ws] 未连接，消息未发送')
     return
   }
-  task.send({ data: JSON.stringify(msg) })
+  task.send({ data: JSON.stringify(makeMessage(type, payload)) })
 }
 
 /** 订阅服务端推来的消息，返回取消订阅函数 */

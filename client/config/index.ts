@@ -1,7 +1,21 @@
 import { defineConfig, type UserConfigExport } from '@tarojs/cli'
+import { searchForWorkspaceRoot } from 'vite'
 
 import devConfig from './dev'
 import prodConfig from './prod'
+
+// 让 Vite 能消费 monorepo 里软链接进来的 @avalon/shared（原始 .ts）：
+// - fs.allow 放行项目根之外（shared 在 client/ 外面）
+// - optimizeDeps.exclude 让 Vite 把它当源码处理，而不是预打包成已编译依赖
+const sharedSupportPlugin = {
+  name: 'avalon-shared-support',
+  config() {
+    return {
+      server: { fs: { allow: [searchForWorkspaceRoot(process.cwd())] } },
+      optimizeDeps: { exclude: ['@avalon/shared'] },
+    }
+  },
+}
 
 // https://taro-docs.jd.com/docs/next/config#defineconfig-辅助函数
 export default defineConfig<'vite'>(async (merge, { command, mode }) => {
@@ -29,7 +43,10 @@ export default defineConfig<'vite'>(async (merge, { command, mode }) => {
       }
     },
     framework: 'react',
-    compiler: 'vite',
+    compiler: {
+      type: 'vite',
+      vitePlugins: [sharedSupportPlugin],
+    },
     mini: {
       postcss: {
         pxtransform: {

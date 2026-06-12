@@ -1,0 +1,8 @@
+{
+  "name": "@avalon/shared",
+  "version": "1.0.0",
+  "description": "前后端共享的类型与消息协议",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true
+}

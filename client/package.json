@@ -44,6 +44,7 @@
   },
   "author": "",
   "dependencies": {
+    "@avalon/shared": "*",
     "@babel/runtime": "^7.24.4",
     "@tarojs/components": "4.2.0",
     "@tarojs/helper": "4.2.0",

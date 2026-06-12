@@ -1,0 +1,11 @@
+{
+  "name": "avalon-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "阿瓦隆桌游小程序：Taro 前端 + Node 后端 + 共享类型",
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ]
+}

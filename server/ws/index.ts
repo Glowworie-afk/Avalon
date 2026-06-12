@@ -1,43 +1,42 @@
 import type { Server as HttpServer } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyToken } from '../utils/token';
+import {
+  ClientEvent,
+  ServerEvent,
+  makeMessage,
+  type Message,
+  type JoinRoomPayload,
+  type PublicPlayer,
+  type PublicRoom,
+} from '@avalon/shared';
 
 /**
- * WebSocket 链路（对应 Day 1 目标）：
- *   客户端发消息 → 服务端用 token 认出是谁 → 广播给同房间的人。
+ * WebSocket 链路。所有消息都走 @avalon/shared 里定义的统一信封：
+ *   { type: ClientEvent | ServerEvent, payload: ... }
  *
- * 关键概念：每条连接都要和「玩家 openid」「房间 roomId」绑定。
- * 这里直接把这两个字段挂在 ws 对象上（最简单的做法）。
+ * Day 1 范围：握手鉴权、PING/PONG、JOIN_ROOM 后按房间广播 ROOM_UPDATE（公开视图）。
+ * 真正的房间持久化、发牌、可见性计算在 Day 2–5。
  */
 
-// 给 ws 连接对象扩展我们要挂的字段
 interface GameSocket extends WebSocket {
   openid?: string;
   roomId?: string | null;
 }
 
-// 客户端 → 服务端 的消息类型
-type ClientMessage =
-  | { type: 'PING' }
-  | { type: 'JOIN'; roomId: string }
-  | { type: 'CHAT'; text: string };
-
-/** 从握手请求的 URL 里解析出 token（客户端通过 ?token=xxx 传） */
+/** 从握手 URL 解析 token（客户端通过 ?token=xxx 传） */
 function parseToken(url: string | undefined): string {
   if (!url) return '';
-  // url 形如 "/?token=xxx"，用一个占位 base 拼成完整 URL 再解析
   const parsed = new URL(url, 'http://localhost');
   return parsed.searchParams.get('token') ?? '';
 }
 
 export function setupWebSocket(server: HttpServer): WebSocketServer {
-  // 复用 Express 的同一个 http 端口，不另开端口
   const wss = new WebSocketServer({ server });
 
   wss.on('connection', (socket: GameSocket, req) => {
-    // —— 握手即鉴权：没有有效 token 直接踢掉 ——
-    const token = parseToken(req.url);
-    const payload = verifyToken(token);
+    // —— 握手即鉴权 ——
+    const payload = verifyToken(parseToken(req.url));
     if (!payload) {
       socket.close(4001, 'unauthorized');
       return;
@@ -46,73 +45,90 @@ export function setupWebSocket(server: HttpServer): WebSocketServer {
     socket.roomId = null;
     console.log(`[ws] connected: ${socket.openid}`);
 
-    // 连上先回个欢迎，方便客户端确认握手成功
-    send(socket, { type: 'WELCOME', openid: socket.openid });
+    sendMessage(socket, makeMessage(ServerEvent.WELCOME, { openid: socket.openid }));
 
     socket.on('message', (raw) => {
-      let msg: ClientMessage;
+      let msg: Message;
       try {
         msg = JSON.parse(raw.toString());
       } catch {
-        return send(socket, { type: 'ERROR', error: 'invalid json' });
+        return sendMessage(socket, makeMessage(ServerEvent.ERROR, { message: 'invalid json' }));
       }
 
       switch (msg.type) {
-        case 'PING':
-          send(socket, { type: 'PONG', ts: Date.now() });
+        case ClientEvent.PING:
+          sendMessage(socket, makeMessage(ServerEvent.PONG, { ts: Date.now() }));
           break;
 
-        case 'JOIN':
-          socket.roomId = msg.roomId;
-          console.log(`[ws] ${socket.openid} joined room ${msg.roomId}`);
-          // 通知同房间所有人「有人加入了」
-          broadcast(wss, msg.roomId, {
-            type: 'SYSTEM',
-            event: 'join',
-            openid: socket.openid,
-          });
-          break;
-
-        case 'CHAT':
-          // 广播给同房间的人；没进房间就只回给自己
-          if (socket.roomId) {
-            broadcast(wss, socket.roomId, {
-              type: 'CHAT',
-              from: socket.openid,
-              text: msg.text,
-            });
-          } else {
-            send(socket, { type: 'ERROR', error: 'join a room first' });
+        case ClientEvent.JOIN_ROOM: {
+          const { roomId } = msg.payload as JoinRoomPayload;
+          if (!roomId) {
+            return sendMessage(socket, makeMessage(ServerEvent.ERROR, { message: 'missing roomId' }));
           }
+          socket.roomId = roomId;
+          console.log(`[ws] ${socket.openid} joined room ${roomId}`);
+          // 广播公开房间视图给同房间所有人（Day 1 骨架，Day 2 换成 Redis 里的真实房间）
+          broadcast(wss, roomId, makeMessage(ServerEvent.ROOM_UPDATE, { room: buildRoomSkeleton(wss, roomId) }));
           break;
+        }
 
         default:
-          send(socket, { type: 'ERROR', error: 'unknown type' });
+          sendMessage(socket, makeMessage(ServerEvent.ERROR, { message: `unhandled type: ${msg.type}` }));
       }
     });
 
     socket.on('close', () => {
       console.log(`[ws] disconnected: ${socket.openid}`);
-      // 断线重连、房主迁移等放到 Day 9 处理，这里先只打日志
+      const roomId = socket.roomId;
+      // 离开后也广播一次，让房间里其他人看到人数变化（重连/房主迁移留到 Day 9）
+      if (roomId) {
+        broadcast(wss, roomId, makeMessage(ServerEvent.ROOM_UPDATE, { room: buildRoomSkeleton(wss, roomId) }));
+      }
     });
   });
 
   return wss;
 }
 
-/** 给单条连接发消息 */
-function send(socket: WebSocket, msg: object): void {
+/** 给单条连接发一条信封消息 */
+function sendMessage(socket: WebSocket, msg: Message): void {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(msg));
   }
 }
 
-/** 广播给某个房间里的所有连接 */
-function broadcast(wss: WebSocketServer, roomId: string, msg: object): void {
+/** 广播给某房间的所有连接 */
+function broadcast(wss: WebSocketServer, roomId: string, msg: Message): void {
   const data = JSON.stringify(msg);
   for (const client of wss.clients as Set<GameSocket>) {
     if (client.roomId === roomId && client.readyState === WebSocket.OPEN) {
       client.send(data);
     }
   }
+}
+
+/**
+ * Day 1 临时：直接从当前在线连接拼出一个公开房间视图。
+ * Day 2 起房间状态落到 Redis，这里会换成读真实 Room 再 toPublicRoom()。
+ */
+function buildRoomSkeleton(wss: WebSocketServer, roomId: string): PublicRoom {
+  const members = [...(wss.clients as Set<GameSocket>)].filter(
+    (c) => c.roomId === roomId && c.readyState === WebSocket.OPEN,
+  );
+  const players: PublicPlayer[] = members.map((c, i) => ({
+    openid: c.openid ?? '',
+    nickname: c.openid ?? '', // 还没接用户昵称，先用 openid 占位
+    seat: i,
+    isHost: i === 0,
+    isReady: false,
+    connected: true,
+  }));
+  return {
+    roomId,
+    hostOpenid: players[0]?.openid ?? '',
+    players,
+    status: 'waiting',
+    config: { useLancelot: false, useLadyOfLake: false },
+    createdAt: Date.now(),
+  };
 }
