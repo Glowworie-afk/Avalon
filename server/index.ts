@@ -1,7 +1,9 @@
 import express from 'express';
+import { createServer } from 'node:http';
 import { config } from './config';
 import loginRouter from './http/login';
 import { authGuard } from './middleware/auth';
+import { setupWebSocket } from './ws';
 
 const app = express();
 
@@ -23,7 +25,12 @@ app.get('/api/me', authGuard, (req, res) => {
   res.json({ openid: req.openid });
 });
 
-app.listen(config.port, () => {
+// 用一个 http.Server 同时承载 Express（HTTP 接口）和 WebSocket，复用同一端口
+const server = createServer(app);
+setupWebSocket(server);
+
+server.listen(config.port, () => {
   console.log(`server listening on http://localhost:${config.port}`);
+  console.log(`ws endpoint    ws://localhost:${config.port}`);
   console.log(`mockLogin = ${config.mockLogin}`);
 });
