@@ -63,6 +63,12 @@ export function connectSocket(): Promise<Taro.SocketTask> {
   })
 }
 
+/** 已连接就复用，没连接就建一条。页面进入时调用，避免重复连接 */
+export function ensureSocket(): Promise<Taro.SocketTask> {
+  if (task) return Promise.resolve(task)
+  return connectSocket()
+}
+
 /** 按统一信封发送一条消息 */
 export function sendMessage<T>(type: EventType, payload: T): void {
   if (!task) {

@@ -1,0 +1,48 @@
+.index {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #1a2238 0%, #2b3a67 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 60px;
+  box-sizing: border-box;
+
+  .hero {
+    margin-top: 180px;
+    margin-bottom: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .title {
+    font-size: 88px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 8px;
+  }
+
+  .subtitle {
+    margin-top: 16px;
+    font-size: 28px;
+    color: #aab3d0;
+  }
+
+  .btn-primary {
+    width: 100%;
+    background: #f0b429;
+    color: #1a2238;
+    font-size: 34px;
+    font-weight: 600;
+    border-radius: 48px;
+    margin-bottom: 32px;
+  }
+
+  .tip {
+    font-size: 24px;
+    color: #8b94b3;
+    text-align: center;
+    line-height: 1.6;
+    padding: 0 20px;
+  }
+}

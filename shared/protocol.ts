@@ -5,11 +5,14 @@
  * 不会给前后端打包引入额外负担（避免 enum 生成的运行时对象）。
  */
 
-import type { PublicRoom, RoleInfo } from './types'
+import type { PublicRoom, RoleInfo, GameConfig, GamePhase, Team } from './types'
 
 // ===== 客户端 → 服务端（玩家操作）=====
 export const ClientEvent = {
+  CREATE_ROOM: 'create_room', // 建房（房主），带初始配置
   JOIN_ROOM: 'join_room',
+  LEAVE_ROOM: 'leave_room',
+  UPDATE_CONFIG: 'update_config', // 房主改人数/扩展开关
   TOGGLE_READY: 'toggle_ready',
   START_GAME: 'start_game',
   PROPOSE_TEAM: 'propose_team',
@@ -46,8 +49,16 @@ export interface Message<T = unknown> {
 
 // ===== 各事件的 payload 类型（按需扩充）=====
 
+export interface CreateRoomPayload {
+  config?: Partial<GameConfig> // 不传则用默认配置
+}
+
 export interface JoinRoomPayload {
   roomId: string
+}
+
+export interface UpdateConfigPayload {
+  config: Partial<GameConfig>
 }
 
 export interface WelcomePayload {
@@ -64,6 +75,46 @@ export interface RoleInfoPayload {
 
 export interface ErrorPayload {
   message: string
+}
+
+// ===== 对局（Day 4：组队 + 投票）=====
+
+export interface ProposeTeamPayload {
+  seats: number[] // 队长提名的队员座位号
+}
+
+export interface VotePayload {
+  approve: boolean // true 赞成 / false 反对
+}
+
+/** 进入对局：前端收到后切到对局界面 */
+export interface GameStartedPayload {
+  round: number
+  leaderSeat: number
+}
+
+/** 阶段变化（组队 / 投票 / 任务 …） */
+export interface PhaseChangePayload {
+  phase: GamePhase
+  round: number
+  leaderSeat: number
+  proposedTeam: number[]
+  rejectCount: number
+}
+
+/** 投票结算：所有人投完后揭晓每个人的票 */
+export interface VoteResultPayload {
+  approved: boolean
+  votes: { openid: string; approve: boolean }[]
+  round: number
+  leaderSeat: number // 通过则不变；否决则已轮转到下一任队长
+  rejectCount: number
+}
+
+/** 终局 */
+export interface GameOverPayload {
+  winner: Team
+  reason: string
 }
 
 /** 构造一条消息的小助手，保证结构统一 */

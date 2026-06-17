@@ -2,3 +2,5 @@
 //   import { ClientEvent, type PublicRoom } from '@avalon/shared'
 export * from './types'
 export * from './protocol'
+export * from './roles'
+export * from './missions'

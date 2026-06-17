@@ -1,0 +1,77 @@
+.register {
+  min-height: 100vh;
+  background: #f5f6fa;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 60px;
+  box-sizing: border-box;
+
+  .reg-title {
+    margin-top: 100px;
+    margin-bottom: 60px;
+    font-size: 40px;
+    font-weight: 600;
+    color: #1a1a1a;
+  }
+
+  .avatar-btn {
+    width: 180px;
+    height: 180px;
+    padding: 0;
+    margin: 0 0 50px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &::after {
+      border: none;
+    }
+  }
+
+  .avatar-img {
+    width: 180px;
+    height: 180px;
+  }
+
+  .avatar-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .avatar-plus {
+    font-size: 56px;
+    color: #c0c4cc;
+  }
+
+  .avatar-tip {
+    font-size: 24px;
+    color: #c0c4cc;
+    margin-top: 8px;
+  }
+
+  .nickname-input {
+    width: 100%;
+    height: 96px;
+    background: #fff;
+    border-radius: 16px;
+    padding: 0 32px;
+    box-sizing: border-box;
+    font-size: 32px;
+    margin-bottom: 60px;
+  }
+
+  .submit-btn {
+    width: 100%;
+    background: #f0b429;
+    color: #1a2238;
+    font-size: 34px;
+    font-weight: 600;
+    border-radius: 48px;
+  }
+}

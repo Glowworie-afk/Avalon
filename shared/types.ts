@@ -37,6 +37,7 @@ export type GamePhase =
   | 'over' // 结束
 
 export interface GameConfig {
+  playerCount: number // 目标人数 5–10，决定房间容量与发牌时的角色构成
   useLancelot: boolean
   useLadyOfLake: boolean
 }
@@ -46,6 +47,7 @@ export interface GameConfig {
 export interface Player {
   openid: string
   nickname: string
+  avatarUrl: string // 头像 URL（注册时填写）
   seat: number // 座位号
   isHost: boolean
   isReady: boolean
@@ -83,6 +85,7 @@ export interface Room {
 export interface PublicPlayer {
   openid: string
   nickname: string
+  avatarUrl: string
   seat: number
   isHost: boolean
   isReady: boolean
@@ -96,6 +99,7 @@ export interface PublicGameState {
   questResults: ('success' | 'fail')[]
   proposedTeam: number[]
   rejectCount: number
+  votedCount: number // 已投票人数（只报数量、不报谁投了什么，揭晓前保密）
   ladyOfLakeHolder?: number
 }
 
@@ -126,6 +130,7 @@ export function toPublicPlayer(p: Player): PublicPlayer {
   return {
     openid: p.openid,
     nickname: p.nickname,
+    avatarUrl: p.avatarUrl,
     seat: p.seat,
     isHost: p.isHost,
     isReady: p.isReady,
@@ -141,6 +146,7 @@ export function toPublicGameState(g: GameState): PublicGameState {
     questResults: g.questResults,
     proposedTeam: g.proposedTeam,
     rejectCount: g.rejectCount,
+    votedCount: Object.keys(g.votes).length,
     // 仅在有值时才带上可选字段（兼容 exactOptionalPropertyTypes）
     ...(g.ladyOfLakeHolder !== undefined ? { ladyOfLakeHolder: g.ladyOfLakeHolder } : {}),
   }

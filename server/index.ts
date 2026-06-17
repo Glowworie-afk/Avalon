@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { config } from './config';
 import loginRouter from './http/login';
+import profileRouter from './http/profile';
 import { authGuard } from './middleware/auth';
 import { setupWebSocket } from './ws';
 
@@ -17,6 +18,9 @@ app.get('/health', (_req, res) => {
 
 // 登录相关路由： POST /api/login
 app.use('/api', loginRouter);
+
+// 用户资料路由： GET/POST /api/profile（注册检测 + 存名称头像）
+app.use('/api', profileRouter);
 
 // —— 受保护的示例接口 ——
 // 加上 authGuard 后，没带有效 token 的请求会被挡在 401。

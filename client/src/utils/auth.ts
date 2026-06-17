@@ -44,4 +44,10 @@ export async function ensureLogin(): Promise<void> {
   await login();
 }
 
+/** 查询当前登录用户的 openid（受保护接口，token 有效才返回） */
+export async function whoAmI(): Promise<string> {
+  const res = await request<{ openid: string }>({ url: '/api/me' });
+  return res.openid;
+}
+
 export { getToken, clearToken };
