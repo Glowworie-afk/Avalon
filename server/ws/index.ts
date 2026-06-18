@@ -15,6 +15,7 @@ import {
   type UpdateConfigPayload,
   type ProposeTeamPayload,
   type VotePayload,
+  type QuestActionPayload,
   type Room,
   type Player,
   type GameConfig,
@@ -23,7 +24,7 @@ import {
 import { getRoom, saveRoom, deleteRoom, roomExists } from '../store/roomStore';
 import { getUser } from '../store/userStore';
 import { generateUniqueCode } from '../lib/roomCode';
-import { initGame, dealRoles, proposeTeam, castVote } from '../game/engine';
+import { initGame, dealRoles, buildRoleInfo, proposeTeam, castVote, submitQuestAction } from '../game/engine';
 
 /**
  * WebSocket 房间逻辑（Day 2）。
@@ -133,6 +134,9 @@ async function handleMessage(wss: WebSocketServer, socket: GameSocket, msg: Mess
     case ClientEvent.VOTE:
       return handleVote(wss, socket, msg.payload as VotePayload);
 
+    case ClientEvent.QUEST_ACTION:
+      return handleQuestAction(wss, socket, msg.payload as QuestActionPayload);
+
     default:
       send(socket, makeMessage(ServerEvent.ERROR, { message: `unhandled type: ${msg.type}` }));
   }
@@ -167,7 +171,6 @@ async function joinRoom(wss: WebSocketServer, socket: GameSocket, payload: JoinR
 
   const room = await getRoom(roomId);
   if (!room) return err(socket, '房间不存在');
-  if (room.status !== 'waiting') return err(socket, '游戏已经开始');
 
   const openid = socket.openid!;
   const existing = room.players.find((p) => p.openid === openid);
@@ -175,6 +178,7 @@ async function joinRoom(wss: WebSocketServer, socket: GameSocket, payload: JoinR
     // 重连：标记回在线即可
     existing.connected = true;
   } else {
+    if (room.status !== 'waiting') return err(socket, '游戏已经开始');
     if (room.players.length >= room.config.playerCount) return err(socket, '房间已满');
     room.players.push(await makePlayer(openid, room.players.length, false));
   }
@@ -182,6 +186,9 @@ async function joinRoom(wss: WebSocketServer, socket: GameSocket, payload: JoinR
   socket.roomId = roomId;
   console.log(`[ws] ${openid} joined room ${roomId}`);
   broadcastRoom(wss, room);
+  if (existing && room.status !== 'waiting' && existing.role && existing.team) {
+    send(socket, makeMessage(ServerEvent.ROLE_INFO, { info: buildRoleInfo(room, openid) }));
+  }
 }
 
 async function leaveRoom(wss: WebSocketServer, socket: GameSocket): Promise<void> {
@@ -299,6 +306,39 @@ async function handleVote(
     round: g.round,
     leaderSeat: g.leaderSeat,
     rejectCount: g.rejectCount,
+  }));
+  broadcastRoom(wss, room);
+
+  if (res.tally.gameOver) {
+    broadcast(wss, room.roomId, makeMessage(ServerEvent.GAME_OVER, {
+      winner: res.tally.gameOver.winner,
+      reason: res.tally.gameOver.reason,
+    }));
+  }
+}
+
+async function handleQuestAction(
+  wss: WebSocketServer,
+  socket: GameSocket,
+  payload: QuestActionPayload,
+): Promise<void> {
+  const room = await currentRoom(socket);
+  if (!room) return err(socket, '你不在任何房间');
+  const res = submitQuestAction(room, socket.openid!, !!payload?.fail);
+  if (!res.ok) return err(socket, res.error);
+  await saveRoom(room);
+
+  if (res.tally.status === 'pending') {
+    return;
+  }
+
+  broadcast(wss, room.roomId, makeMessage(ServerEvent.QUEST_RESULT, {
+    round: res.tally.round,
+    result: res.tally.result,
+    failCount: res.tally.failCount,
+    requiredFails: res.tally.requiredFails,
+    successCount: res.tally.successCount,
+    failResultCount: res.tally.failResultCount,
   }));
   broadcastRoom(wss, room);
 

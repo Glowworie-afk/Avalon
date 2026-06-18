@@ -1,6 +1,31 @@
 .game {
   padding: 24px;
 
+  .role-card {
+    min-height: 168px;
+    background: #1a2238;
+    color: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    &.show { background: #fff; color: #1a2238; border: 2px solid #f0b429; }
+  }
+  .role-name { font-size: 40px; font-weight: 700; }
+  .role-name.hidden { color: #fff; }
+  .role-team {
+    font-size: 24px;
+    color: #cbd5e0;
+    margin-top: 8px;
+    &.good { color: #2f855a; }
+    &.evil { color: #c53030; }
+  }
+  .night-info { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+  .night-line { font-size: 24px; color: #4a5568; }
+
   .track {
     display: flex;
     gap: 12px;
@@ -56,6 +81,16 @@
     &.y { background: #d8f5e3; color: #2f855a; }
     &.n { background: #ffe0de; color: #c53030; }
   }
+
+  .quest-result {
+    margin-top: 24px;
+    border-radius: 12px;
+    padding: 16px;
+    &.success { background: #eef9f1; }
+    &.fail { background: #fdeeed; }
+  }
+  .qr-title { font-size: 28px; font-weight: 600; color: #1a2238; }
+  .qr-meta { display: block; margin-top: 8px; font-size: 22px; color: #666; }
 
   .leader-bar {
     display: flex;

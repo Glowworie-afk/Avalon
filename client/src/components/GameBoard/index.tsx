@@ -7,8 +7,11 @@ import {
   failsRequired,
   TOTAL_ROUNDS,
   MAX_REJECTS,
+  ROLE_META,
   type PublicRoom,
+  type RoleInfo,
   type VoteResultPayload,
+  type QuestResultPayload,
   type GameOverPayload,
 } from '@avalon/shared'
 import './index.scss'
@@ -16,7 +19,9 @@ import './index.scss'
 interface Props {
   room: PublicRoom
   myOpenid: string
+  roleInfo: RoleInfo | null
   voteResult: VoteResultPayload | null
+  questResult: QuestResultPayload | null
   gameOver: GameOverPayload | null
 }
 
@@ -25,17 +30,20 @@ interface Props {
  * 每轮人数表、否决轨、队长组队点选、赞成/反对、票数结算揭晓、坏人胜结算。
  * 任务执行成败（Day 5）暂为占位。
  */
-export default function GameBoard({ room, myOpenid, voteResult, gameOver }: Props) {
+export default function GameBoard({ room, myOpenid, roleInfo, voteResult, questResult, gameOver }: Props) {
   const g = room.game
   const players = [...room.players].sort((a, b) => a.seat - b.seat)
   const count = room.config.playerCount
 
   const [selected, setSelected] = useState<number[]>([])
   const [hasVoted, setHasVoted] = useState(false)
+  const [hasQuested, setHasQuested] = useState(false)
+  const [roleVisible, setRoleVisible] = useState(false)
 
   // 每进入一轮新投票（轮次或提名变化），重置本地的"已投票"
   const voteKey = `${g?.round}-${(g?.proposedTeam ?? []).join(',')}`
   useEffect(() => setHasVoted(false), [voteKey])
+  useEffect(() => setHasQuested(false), [g?.phase, g?.round, (g?.proposedTeam ?? []).join(',')])
   // 回到组队阶段时清空已选
   useEffect(() => {
     if (g?.phase === 'team_building') setSelected([])
@@ -47,6 +55,8 @@ export default function GameBoard({ room, myOpenid, voteResult, gameOver }: Prop
   const isLeader = leader?.openid === myOpenid
   const need = teamSize(count, g.round)
   const proposed = new Set(g.proposedTeam)
+  const me = players.find((p) => p.openid === myOpenid)
+  const onQuestTeam = me ? proposed.has(me.seat) : false
 
   const toggleSelect = (seat: number) => {
     if (!isLeader || g.phase !== 'team_building') return
@@ -63,11 +73,40 @@ export default function GameBoard({ room, myOpenid, voteResult, gameOver }: Prop
     sendMessage(ClientEvent.VOTE, { approve })
     setHasVoted(true)
   }
+  const quest = (fail: boolean) => {
+    sendMessage(ClientEvent.QUEST_ACTION, { fail })
+    setHasQuested(true)
+  }
 
   const nickOf = (openid: string) => players.find((p) => p.openid === openid)?.nickname ?? openid
+  const nightLines = buildNightLines(roleInfo, nickOf)
 
   return (
     <View className='game'>
+      <View
+        className={`role-card ${roleVisible ? 'show' : ''}`}
+        onTouchStart={() => setRoleVisible(true)}
+        onTouchEnd={() => setRoleVisible(false)}
+        onTouchCancel={() => setRoleVisible(false)}
+      >
+        {roleInfo && roleVisible ? (
+          <>
+            <Text className='role-name'>{ROLE_META[roleInfo.role].name}</Text>
+            <Text className={`role-team ${roleInfo.team}`}>{roleInfo.team === 'good' ? '好人阵营' : '坏人阵营'}</Text>
+            <View className='night-info'>
+              {nightLines.map((line) => (
+                <Text key={line} className='night-line'>{line}</Text>
+              ))}
+            </View>
+          </>
+        ) : (
+          <>
+            <Text className='role-name hidden'>{roleInfo ? '长按查看身份' : '等待身份信息'}</Text>
+            <Text className='role-team'>松手自动隐藏</Text>
+          </>
+        )}
+      </View>
+
       {/* 任务进度 + 每轮人数表 */}
       <View className='track'>
         {Array.from({ length: TOTAL_ROUNDS }, (_, i) => {
@@ -113,6 +152,15 @@ export default function GameBoard({ room, myOpenid, voteResult, gameOver }: Prop
               </Text>
             ))}
           </View>
+        </View>
+      )}
+
+      {questResult && (
+        <View className={`quest-result ${questResult.result}`}>
+          <Text className='qr-title'>第{questResult.round}轮任务{questResult.result === 'success' ? '成功' : '失败'}</Text>
+          <Text className='qr-meta'>
+            失败牌 {questResult.failCount}/{questResult.requiredFails}，当前成功 {questResult.successCount} / 失败 {questResult.failResultCount}
+          </Text>
         </View>
       )}
 
@@ -176,15 +224,46 @@ export default function GameBoard({ room, myOpenid, voteResult, gameOver }: Prop
         </View>
       ) : g.phase === 'quest' ? (
         <View className='phase'>
-          <Text className='phase-tip'>提案通过 ✓</Text>
+          <Text className='phase-tip'>任务执行</Text>
           <View className='team-show'>
             {g.proposedTeam.map((s) => (
               <Text key={s} className='team-chip'>{players.find((p) => p.seat === s)?.nickname}</Text>
             ))}
           </View>
-          <Text className='placeholder'>任务执行（成功/失败牌）将在 Day 5 实现</Text>
+          {!onQuestTeam ? (
+            <Text className='placeholder'>等待队员提交任务牌…</Text>
+          ) : hasQuested ? (
+            <Text className='voted-tip'>已提交任务牌，等待队友…</Text>
+          ) : (
+            <View className='vote-btns'>
+              <Button className='approve' onClick={() => quest(false)}>成功</Button>
+              {roleInfo?.team === 'evil' && (
+                <Button className='reject' onClick={() => quest(true)}>失败</Button>
+              )}
+            </View>
+          )}
         </View>
       ) : null}
     </View>
   )
+}
+
+function buildNightLines(roleInfo: RoleInfo | null, nickOf: (openid: string) => string): string[] {
+  if (!roleInfo) return []
+  if (roleInfo.role === 'merlin') {
+    return [`你看到的坏人：${names(roleInfo.knownEvil, nickOf)}`]
+  }
+  if (roleInfo.role === 'percival') {
+    return [`你看到的梅林候选：${names(roleInfo.merlinCandidates, nickOf)}`]
+  }
+  if (roleInfo.team === 'evil') {
+    return roleInfo.fellowEvil
+      ? [`你认识的坏人同伴：${names(roleInfo.fellowEvil, nickOf)}`]
+      : ['你是奥伯伦，不与其他坏人互认']
+  }
+  return ['你没有额外夜晚信息']
+}
+
+function names(openids: string[] | undefined, nickOf: (openid: string) => string): string {
+  return openids?.length ? openids.map(nickOf).join('、') : '无'
 }

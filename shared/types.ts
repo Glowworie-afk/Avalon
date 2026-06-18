@@ -66,6 +66,8 @@ export interface GameState {
   rejectCount: number // 连续否决次数，到 5 坏人胜
   // votes 只存服务端，揭晓前绝不进公开视图（防偷看先投者）
   votes: Record<string, 'approve' | 'reject'>
+  // questActions 只存服务端，结算前绝不进公开视图
+  questActions: Record<string, 'success' | 'fail'>
   ladyOfLakeHolder?: number // 湖中仙女令牌当前持有者座位
   ladyHistory: number[] // 持有过仙女的座位，用于「不能查已持有者」
 }

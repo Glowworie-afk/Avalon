@@ -14,7 +14,10 @@ import {
   type RoomUpdatePayload,
   type ErrorPayload,
   type VoteResultPayload,
+  type QuestResultPayload,
   type GameOverPayload,
+  type RoleInfoPayload,
+  type RoleInfo,
 } from '@avalon/shared'
 import './index.scss'
 
@@ -30,7 +33,9 @@ export default function Room() {
 
   const [room, setRoom] = useState<PublicRoom | null>(null)
   const [myOpenid, setMyOpenid] = useState('')
+  const [roleInfo, setRoleInfo] = useState<RoleInfo | null>(null)
   const [voteResult, setVoteResult] = useState<VoteResultPayload | null>(null)
+  const [questResult, setQuestResult] = useState<QuestResultPayload | null>(null)
   const [gameOver, setGameOver] = useState<GameOverPayload | null>(null)
   // 分享回调可能拿到旧闭包，用 ref 保证读到最新房间号
   const roomIdRef = useRef('')
@@ -69,8 +74,12 @@ export default function Room() {
             Taro.showToast({ title: (msg.payload as ErrorPayload).message, icon: 'none' })
           } else if (msg.type === ServerEvent.GAME_STARTED) {
             Taro.showToast({ title: '游戏开始', icon: 'none' })
+          } else if (msg.type === ServerEvent.ROLE_INFO) {
+            setRoleInfo((msg.payload as RoleInfoPayload).info)
           } else if (msg.type === ServerEvent.VOTE_RESULT) {
             setVoteResult(msg.payload as VoteResultPayload)
+          } else if (msg.type === ServerEvent.QUEST_RESULT) {
+            setQuestResult(msg.payload as QuestResultPayload)
           } else if (msg.type === ServerEvent.GAME_OVER) {
             setGameOver(msg.payload as GameOverPayload)
           }
@@ -128,7 +137,14 @@ export default function Room() {
   if (room.status === 'playing' && room.game) {
     return (
       <View className='room'>
-        <GameBoard room={room} myOpenid={myOpenid} voteResult={voteResult} gameOver={gameOver} />
+        <GameBoard
+          room={room}
+          myOpenid={myOpenid}
+          roleInfo={roleInfo}
+          voteResult={voteResult}
+          questResult={questResult}
+          gameOver={gameOver}
+        />
       </View>
     )
   }

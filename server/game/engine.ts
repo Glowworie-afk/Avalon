@@ -10,7 +10,9 @@ import {
   buildRoleList,
   ROLE_META,
   teamSize,
+  failsRequired,
   MAX_REJECTS,
+  TOTAL_ROUNDS,
   type Role,
   type RoleInfo,
   type Room,
@@ -27,6 +29,7 @@ export function initGame(room: Room): void {
     proposedTeam: [],
     rejectCount: 0,
     votes: {},
+    questActions: {},
     ladyHistory: [],
   }
 }
@@ -66,7 +69,7 @@ function shuffle<T>(items: T[], random: () => number): T[] {
   return copy
 }
 
-function buildRoleInfo(room: Room, openid: string): RoleInfo {
+export function buildRoleInfo(room: Room, openid: string): RoleInfo {
   const me = room.players.find((p) => p.openid === openid)
   if (!me?.role || !me.team) {
     throw new Error(`missing dealt role for ${openid}`)
@@ -161,6 +164,7 @@ export function castVote(
   if (approved) {
     g.rejectCount = 0
     g.phase = 'quest' // 进入任务执行（Day 5 实现）
+    g.questActions = {}
     return { ok: true, tally: { status: 'resolved', approved: true, votes } }
   }
 
@@ -183,6 +187,92 @@ export function castVote(
   g.leaderSeat = (g.leaderSeat + 1) % room.config.playerCount
   g.proposedTeam = []
   g.votes = {}
+  g.questActions = {}
   g.phase = 'team_building'
   return { ok: true, tally: { status: 'resolved', approved: false, votes } }
+}
+
+export interface QuestResolved {
+  status: 'resolved'
+  round: number
+  result: 'success' | 'fail'
+  failCount: number
+  requiredFails: number
+  successCount: number
+  failResultCount: number
+  gameOver?: { winner: 'good' | 'evil'; reason: string }
+}
+export type QuestTally = { status: 'pending' } | QuestResolved
+
+/** 一名队员执行任务；队伍所有人提交后自动结算任务轨。 */
+export function submitQuestAction(
+  room: Room,
+  openid: string,
+  fail: boolean,
+): EngineError | { ok: true; tally: QuestTally } {
+  const g = room.game
+  if (!g) return { ok: false, error: '游戏未开始' }
+  if (g.phase !== 'quest') return { ok: false, error: '当前不是任务阶段' }
+
+  const player = room.players.find((p) => p.openid === openid)
+  if (!player) return { ok: false, error: '你不在本局' }
+  if (!g.proposedTeam.includes(player.seat)) return { ok: false, error: '你不在本轮任务队伍中' }
+  if (g.questActions[openid] !== undefined) return { ok: false, error: '你已经提交过任务牌了' }
+
+  // 好人不能出失败牌；即使客户端伪造 fail=true，服务端也按成功牌记。
+  g.questActions[openid] = fail && player.team === 'evil' ? 'fail' : 'success'
+
+  if (Object.keys(g.questActions).length < g.proposedTeam.length) {
+    return { ok: true, tally: { status: 'pending' } }
+  }
+
+  const round = g.round
+  const failCount = Object.values(g.questActions).filter((a) => a === 'fail').length
+  const requiredFails = failsRequired(room.config.playerCount, round)
+  const result: 'success' | 'fail' = failCount >= requiredFails ? 'fail' : 'success'
+  g.questResults.push(result)
+
+  const successCount = g.questResults.filter((r) => r === 'success').length
+  const failResultCount = g.questResults.filter((r) => r === 'fail').length
+  const base = { status: 'resolved' as const, round, result, failCount, requiredFails, successCount, failResultCount }
+
+  if (successCount >= 3) {
+    g.phase = 'over'
+    room.status = 'finished'
+    return {
+      ok: true,
+      tally: { ...base, gameOver: { winner: 'good', reason: '三次任务成功，好人阵营获胜' } },
+    }
+  }
+  if (failResultCount >= 3) {
+    g.phase = 'over'
+    room.status = 'finished'
+    return {
+      ok: true,
+      tally: { ...base, gameOver: { winner: 'evil', reason: '三次任务失败，坏人阵营获胜' } },
+    }
+  }
+  if (g.questResults.length >= TOTAL_ROUNDS) {
+    const winner = successCount > failResultCount ? 'good' : 'evil'
+    g.phase = 'over'
+    room.status = 'finished'
+    return {
+      ok: true,
+      tally: {
+        ...base,
+        gameOver: {
+          winner,
+          reason: `五轮任务结束，成功 ${successCount} 次，失败 ${failResultCount} 次`,
+        },
+      },
+    }
+  }
+
+  g.round += 1
+  g.leaderSeat = (g.leaderSeat + 1) % room.config.playerCount
+  g.proposedTeam = []
+  g.votes = {}
+  g.questActions = {}
+  g.phase = 'team_building'
+  return { ok: true, tally: base }
 }

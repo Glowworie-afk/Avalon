@@ -14,6 +14,7 @@ import {
   type Message,
   type PublicRoom,
   type VoteResultPayload,
+  type QuestResultPayload,
 } from '@avalon/shared';
 
 let server: Server;
@@ -129,6 +130,51 @@ test('START_GAME 私密下发身份：每人只收到自己的 ROLE_INFO，ROOM_
   clients.forEach((c) => c.close());
 });
 
+test('7 人局真实发牌，重连后仍能重新收到自己的 ROLE_INFO', async () => {
+  for (let i = 0; i < 7; i++) await saveUser(`p${i}`, { nickname: `玩家${i}`, avatarUrl: '' });
+
+  const host = new Client(signToken('p0'));
+  await host.open();
+  host.send(ClientEvent.CREATE_ROOM, { config: { playerCount: 7 } });
+  const roomId = roomOf(await host.waitFor(isType(ServerEvent.ROOM_UPDATE))).roomId;
+
+  const clients = [host];
+  for (let i = 1; i < 7; i++) {
+    const c = new Client(signToken(`p${i}`));
+    await c.open();
+    c.send(ClientEvent.JOIN_ROOM, { roomId });
+    c.send(ClientEvent.TOGGLE_READY, {});
+    clients.push(c);
+  }
+
+  await host.waitFor(
+    (m) => m.type === ServerEvent.ROOM_UPDATE &&
+      roomOf(m).players.length === 7 &&
+      roomOf(m).players.every((p) => p.isReady),
+    4000,
+  );
+  host.send(ClientEvent.START_GAME, {});
+
+  const roleMessages = await Promise.all(clients.map((c) => c.waitFor(isType(ServerEvent.ROLE_INFO))));
+  const roles = roleMessages.map((m) => (m.payload as { info: { role: string } }).info.role).sort();
+  assert.deepEqual(roles, ['assassin', 'loyal', 'loyal', 'merlin', 'morgana', 'oberon', 'percival'].sort());
+
+  const reconnecting = clients[3]!;
+  reconnecting.close();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const back = new Client(signToken('p3'));
+  await back.open();
+  back.send(ClientEvent.JOIN_ROOM, { roomId });
+  await back.waitFor((m) => m.type === ServerEvent.ROOM_UPDATE && roomOf(m).status === 'playing');
+  const restored = await back.waitFor(isType(ServerEvent.ROLE_INFO));
+  assert.ok((restored.payload as { info: { role?: string; team?: string } }).info.role);
+  assert.ok((restored.payload as { info: { role?: string; team?: string } }).info.team);
+
+  clients.forEach((c) => c.close());
+  back.close();
+});
+
 test('5 人开局 → 队长组队 → 全员赞成 → 提案通过', async () => {
   for (let i = 0; i < 5; i++) await saveUser(`p${i}`, { nickname: `玩家${i}`, avatarUrl: '' });
 
@@ -178,6 +224,19 @@ test('5 人开局 → 队长组队 → 全员赞成 → 提案通过', async () 
   assert.equal(result.approved, true);
   assert.equal(result.votes.length, 5);
   assert.ok(result.votes.every((v) => v.approve));
+
+  host.send(ClientEvent.QUEST_ACTION, { fail: false });
+  guests[0]!.send(ClientEvent.QUEST_ACTION, { fail: false });
+  const quest = (await host.waitFor(isType(ServerEvent.QUEST_RESULT))).payload as QuestResultPayload;
+  assert.equal(quest.round, 1);
+  assert.equal(quest.result, 'success');
+  const afterQuest = roomOf(
+    await host.waitFor((m) => m.type === ServerEvent.ROOM_UPDATE && roomOf(m).game?.round === 2),
+  );
+  assert.deepEqual(afterQuest.game!.questResults, ['success']);
+  const raw = JSON.stringify(afterQuest);
+  assert.equal(raw.includes('questActions'), false);
+  assert.equal(raw.includes('"votes"'), false);
 
   host.close();
   guests.forEach((g) => g.close());

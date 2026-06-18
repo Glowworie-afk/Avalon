@@ -87,6 +87,10 @@ export interface VotePayload {
   approve: boolean // true 赞成 / false 反对
 }
 
+export interface QuestActionPayload {
+  fail: boolean // true 出失败牌；好人服务端会强制按成功牌结算
+}
+
 /** 进入对局：前端收到后切到对局界面 */
 export interface GameStartedPayload {
   round: number
@@ -109,6 +113,15 @@ export interface VoteResultPayload {
   round: number
   leaderSeat: number // 通过则不变；否决则已轮转到下一任队长
   rejectCount: number
+}
+
+export interface QuestResultPayload {
+  round: number
+  result: 'success' | 'fail'
+  failCount: number
+  requiredFails: number
+  successCount: number
+  failResultCount: number
 }
 
 /** 终局 */
