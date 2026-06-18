@@ -192,20 +192,46 @@ async function joinRoom(wss: WebSocketServer, socket: GameSocket, payload: JoinR
 }
 
 async function leaveRoom(wss: WebSocketServer, socket: GameSocket): Promise<void> {
-  const room = await currentRoom(socket);
-  socket.roomId = null;
-  if (!room) return;
-
-  const openid = socket.openid!;
-  removePlayer(room, openid);
-
-  if (room.players.length === 0) {
-    await deleteRoom(room.roomId);
-    return;
+    const room = await currentRoom(socket);
+    socket.roomId = null;
+    if (!room) return;
+  
+    const openid = socket.openid!;
+  
+    // 【核心改动】：区分大厅阶段和对局阶段的退出逻辑
+    if (room.status === 'playing') {
+      // 1. 游戏中途主动退出（点击了退出按钮）：不移出数组，仅标记离线
+      const me = room.players.find((p) => p.openid === openid);
+      if (me) me.connected = false;
+  
+      // 2. MVP策略：强行结束游戏
+      room.status = 'finished';
+      if (room.game) room.game.phase = 'over';
+      
+      await saveRoom(room);
+  
+      // 3. 全服广播：某人逃跑，游戏解散（按照惯例，好人逃跑判坏人赢，这里统一用 evil 代替）
+      broadcast(wss, room.roomId, makeMessage(ServerEvent.GAME_OVER, {
+        winner: 'evil',
+        reason: `玩家 [${me?.nickname || '未知'}] 中途逃跑，游戏强制解散！`
+      }));
+      
+      // 4. 更新房间状态，让剩下的人看到他头像灰掉，且阶段变为结束
+      broadcastRoom(wss, room);
+  
+    } else {
+      // 大厅等待阶段 或 游戏已经正常结束：正常移除玩家
+      removePlayer(room, openid);
+  
+      // 如果人都走光了，销毁房间
+      if (room.players.length === 0) {
+        await deleteRoom(room.roomId);
+        return;
+      }
+      await saveRoom(room);
+      broadcastRoom(wss, room);
+    }
   }
-  await saveRoom(room);
-  broadcastRoom(wss, room);
-}
 
 async function updateConfig(wss: WebSocketServer, socket: GameSocket, payload: UpdateConfigPayload): Promise<void> {
   const room = await currentRoom(socket);
@@ -351,15 +377,17 @@ async function handleQuestAction(
 }
 
 async function handleDisconnect(wss: WebSocketServer, socket: GameSocket): Promise<void> {
-  const room = await currentRoom(socket);
-  if (!room) return;
-  const me = room.players.find((p) => p.openid === socket.openid);
-  if (me) {
-    me.connected = false; // 掉线先保留座位，重连恢复（房主迁移留到 Day 9）
-    await saveRoom(room);
-    broadcastRoom(wss, room);
+    const room = await currentRoom(socket);
+    if (!room) return;
+    const me = room.players.find((p) => p.openid === socket.openid);
+    if (me) {
+      // 意外断线（如进电梯、锁屏）：只标记离线，绝对不解散房间！
+      // 这样等他重新打开小程序触发 joinRoom 时，就能无缝恢复状态。
+      me.connected = false; 
+      await saveRoom(room);
+      broadcastRoom(wss, room);
+    }
   }
-}
 
 // ===== 工具 =====
 

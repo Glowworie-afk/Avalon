@@ -19,7 +19,7 @@ export const ClientEvent = {
   VOTE: 'vote',
   QUEST_ACTION: 'quest_action',
   LADY_INSPECT: 'lady_inspect',
-  ASSASSINATE: 'assassinate',
+  ASSASSINATE: 'assassinate', // 刺客执行刺杀
   PING: 'ping', // 基础链路（Day 1）
 } as const
 export type ClientEvent = (typeof ClientEvent)[keyof typeof ClientEvent]
@@ -89,6 +89,10 @@ export interface VotePayload {
 
 export interface QuestActionPayload {
   fail: boolean // true 出失败牌；好人服务端会强制按成功牌结算
+}
+
+export interface AssassinatePayload {
+  targetOpenid: string // 刺客选择的目标玩家
 }
 
 /** 进入对局：前端收到后切到对局界面 */
