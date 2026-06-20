@@ -1,48 +1,314 @@
-.index {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #1a2238 0%, #2b3a67 100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0 60px;
-  box-sizing: border-box;
-
-  .hero {
-    margin-top: 180px;
-    margin-bottom: 120px;
+.index-page {
+    height: 100vh;
+    background-color: #0f172a; // 深邃石板黑
     display: flex;
     flex-direction: column;
-    align-items: center;
+    position: relative;
+    overflow: hidden;
+    color: #e2e8f0;
+  
+    // 1. 左上角头像 (适配刘海屏安全区域)
+    .avatar-wrap {
+      position: absolute;
+      top: calc(env(safe-area-inset-top) + 20px);
+      left: 32px;
+      z-index: 20;
+  
+      .avatar-btn {
+        width: 96px; 
+        height: 96px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #facc15, #ca8a04);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 36px;
+        font-weight: bold;
+        color: #0f172a;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+        border: 4px solid #1e293b;
+        padding: 0;
+        margin: 0;
+  
+        &::after { display: none; } // 移除按钮边框
+  
+        &:active {
+          transform: scale(0.9);
+        }
+  
+        .avatar-img {
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+        }
+      }
+    }
+  
+    // 2. 中间卡片展示区
+    .card-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 64px;
+      margin-top: calc(env(safe-area-inset-top) + 100px);
+  
+      .role-card {
+        width: 100%;
+        aspect-ratio: 3 / 4;
+        background-color: #0f172a;
+        border: 2px solid rgba(51, 65, 85, 0.5);
+        border-radius: 64px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 32px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  
+        // 背景阵营辉光
+        .glow {
+          position: absolute;
+          top: -20%; left: -20%; right: -20%; bottom: -20%;
+          filter: blur(60px);
+          opacity: 0.15;
+          z-index: 0;
+          transition: background-color 1s ease;
+          &.good { background-color: #3b82f6; } // 蓝
+          &.evil { background-color: #ef4444; } // 红
+        }
+  
+        // 卡片内部内容 (附带切入动画)
+        .content {
+          position: relative;
+          z-index: 10;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          width: 100%;
+          animation: contentFadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  
+          .team-badge {
+            font-size: 24px;
+            padding: 8px 32px;
+            border-radius: 32px;
+            margin-bottom: 48px;
+            font-weight: bold;
+            border: 2px solid transparent;
+  
+            &.good {
+              background: rgba(30, 58, 138, 0.4);
+              color: #60a5fa;
+              border-color: rgba(59, 130, 246, 0.3);
+            }
+            &.evil {
+              background: rgba(127, 29, 29, 0.4);
+              color: #f87171;
+              border-color: rgba(239, 68, 68, 0.3);
+            }
+          }
+  
+          .icon-wrap {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            background: #020617;
+            border: 2px solid rgba(30, 41, 59, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 80px;
+            margin-bottom: 48px;
+            box-shadow: inset 0 4px 12px rgba(0,0,0,0.5);
+          }
+  
+          .role-name {
+            font-size: 64px;
+            font-weight: 900;
+            color: #fff;
+            letter-spacing: 8px;
+            margin-bottom: 32px;
+          }
+  
+          .divider {
+            width: 80px;
+            height: 6px;
+            background: rgba(51, 65, 85, 0.5);
+            border-radius: 4px;
+            margin-bottom: 32px;
+          }
+  
+          .role-desc {
+            font-size: 28px;
+            line-height: 1.6;
+            color: #94a3b8;
+            text-align: center;
+            padding: 0 16px;
+          }
+        }
+      }
+    }
+  
+    // 3. 底部建房按钮区
+    .bottom-area {
+      padding: 40px 48px 80px;
+      position: relative;
+      z-index: 20;
+  
+      .create-btn {
+        width: 100%;
+        height: 110px;
+        line-height: 110px;
+        border-radius: 32px;
+        font-size: 36px;
+        font-weight: bold;
+        color: #0f172a;
+        background: linear-gradient(to right, #f59e0b, #d97706);
+        box-shadow: 0 12px 30px rgba(234, 179, 8, 0.25);
+        border: none;
+  
+        &::after { display: none; }
+        &:active {
+          transform: scale(0.98);
+          background: #facc15;
+        }
+      }
+    }
+  
+    // 4. 编辑资料弹窗
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(8px);
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 48px;
+  
+      .modal-content {
+        background: #0f172a;
+        border: 2px solid #1e293b;
+        border-radius: 48px;
+        width: 100%;
+        padding: 48px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        animation: modalFadeUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  
+        .modal-title {
+          font-size: 36px;
+          font-weight: bold;
+          color: #fff;
+          margin-bottom: 48px;
+          letter-spacing: 4px;
+        }
+  
+        .edit-avatar {
+          position: relative;
+          margin-bottom: 48px;
+  
+          .avatar-circle {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #facc15, #ca8a04);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 56px;
+            font-weight: bold;
+            color: #0f172a;
+            box-shadow: inset 0 4px 12px rgba(0,0,0,0.2);
+            overflow: hidden;
+  
+            .avatar-img {
+              width: 100%;
+              height: 100%;
+            }
+          }
+          .edit-icon {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            background: #1e293b;
+            border: 2px solid #334155;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+          }
+        }
+  
+        .input-group {
+          width: 100%;
+          margin-bottom: 48px;
+  
+          .label {
+            font-size: 22px;
+            color: #94a3b8;
+            font-weight: bold;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            display: block;
+          }
+  
+          .name-input {
+            width: 100%;
+            background: #020617;
+            border: 2px solid #1e293b;
+            border-radius: 24px;
+            padding: 24px 32px;
+            color: #e2e8f0;
+            font-size: 32px;
+            font-weight: 500;
+            box-sizing: border-box;
+          }
+        }
+  
+        .btn-group {
+          display: flex;
+          width: 100%;
+          gap: 24px;
+  
+          .btn-cancel, .btn-save {
+            flex: 1;
+            height: 96px;
+            line-height: 96px;
+            font-size: 32px;
+            font-weight: bold;
+            border-radius: 24px;
+            border: none;
+            &::after { display: none; }
+          }
+          .btn-cancel {
+            background: #1e293b;
+            color: #cbd5e1;
+          }
+          .btn-save {
+            background: #eab308;
+            color: #0f172a;
+          }
+        }
+      }
+    }
   }
-
-  .title {
-    font-size: 88px;
-    font-weight: 700;
-    color: #fff;
-    letter-spacing: 8px;
+  
+  // 核心 CSS 动画
+  @keyframes contentFadeIn {
+    0% { opacity: 0; transform: scale(0.95) translateY(20px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
   }
-
-  .subtitle {
-    margin-top: 16px;
-    font-size: 28px;
-    color: #aab3d0;
+  
+  @keyframes modalFadeUp {
+    0% { opacity: 0; transform: translateY(40px); }
+    100% { opacity: 1; transform: translateY(0); }
   }
-
-  .btn-primary {
-    width: 100%;
-    background: #f0b429;
-    color: #1a2238;
-    font-size: 34px;
-    font-weight: 600;
-    border-radius: 48px;
-    margin-bottom: 32px;
-  }
-
-  .tip {
-    font-size: 24px;
-    color: #8b94b3;
-    text-align: center;
-    line-height: 1.6;
-    padding: 0 20px;
-  }
-}

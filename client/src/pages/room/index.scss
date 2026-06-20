@@ -1,151 +1,256 @@
-.room {
-  min-height: 100vh;
-  background: #f5f6fa;
-  padding: 32px 32px 200px;
-  box-sizing: border-box;
-
-  &.room-loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #888;
-    font-size: 30px;
-  }
-
-  .room-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 28px;
-  }
-
-  .code-wrap {
-    display: flex;
-    align-items: baseline;
-  }
-
-  .code-label {
-    font-size: 26px;
-    color: #888;
-    margin-right: 16px;
-  }
-
-  .code {
-    font-size: 52px;
-    font-weight: 700;
-    letter-spacing: 8px;
-    color: #1a2238;
-  }
-
-  .copy {
-    font-size: 22px;
-    color: #f0b429;
-    margin-left: 16px;
-  }
-
-  .count {
-    font-size: 30px;
-    color: #2b3a67;
-    font-weight: 600;
-  }
-
-  .invite-btn {
-    width: 100%;
-    background: #07c160;
-    color: #fff;
-    font-size: 30px;
-    font-weight: 600;
-    border-radius: 48px;
-    margin: 0 0 28px;
-  }
-
-  .players {
-    display: flex;
-    flex-wrap: wrap;
-    margin-top: 28px;
-    gap: 24px;
-  }
-
-  .player {
-    width: 132px;
+.room-page {
+    min-height: 100vh;
+    background-color: #0f172a;
     display: flex;
     flex-direction: column;
-    align-items: center;
-
-    &.offline { opacity: 0.4; }
+    color: #e2e8f0;
+  
+    &.loading {
+      align-items: center;
+      justify-content: center;
+      
+      .loading-icon {
+        font-size: 80px;
+        margin-bottom: 24px;
+        animation: pulse 1.5s infinite;
+      }
+      font-size: 32px;
+      color: #94a3b8;
+    }
+  
+    // 导航栏
+    .nav-bar {
+      padding-top: calc(env(safe-area-inset-top) + 20px);
+      padding-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+  
+      .back-btn {
+        position: absolute;
+        left: 32px;
+        bottom: 16px;
+        width: 64px;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        
+        .back-icon {
+          font-size: 64px;
+          color: #eab308;
+          line-height: 1;
+          margin-top: -10px;
+        }
+      }
+  
+      .nav-title {
+        font-size: 36px;
+        font-weight: bold;
+        color: #eab308;
+        letter-spacing: 4px;
+      }
+    }
+  
+    .content {
+      flex: 1;
+      padding: 40px 32px;
+      overflow-y: auto;
+    }
+  
+    // 房间配置简报
+    .room-summary {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 60px;
+  
+      .status-text {
+        font-size: 40px;
+        font-weight: 900;
+        color: #fff;
+        margin-bottom: 16px;
+        letter-spacing: 2px;
+      }
+  
+      .tags {
+        display: flex;
+        gap: 16px;
+  
+        .tag {
+          background: #1e293b;
+          color: #94a3b8;
+          padding: 8px 24px;
+          border-radius: 24px;
+          font-size: 24px;
+          border: 1px solid #334155;
+  
+          &.highlight {
+            color: #eab308;
+            border-color: rgba(234, 179, 8, 0.3);
+            background: rgba(234, 179, 8, 0.1);
+          }
+        }
+      }
+    }
+  
+    // 动态九宫格排布
+    .player-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 40px 20px;
+      padding: 0 16px;
+  
+      .seat {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: transparent;
+        padding: 0;
+        margin: 0;
+        line-height: 1;
+        
+        &::after { display: none; } // 移除小程序Button原生边框
+  
+        &.offline { opacity: 0.4; filter: grayscale(100%); }
+        
+        // 已被占用的座位
+        &.occupied {
+          .avatar-wrap {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            position: relative;
+            background: #1e293b;
+            border: 4px solid #334155;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+  
+            &.is-ready {
+              border-color: #10b981; // 准备状态绿边
+              box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+            }
+  
+            .avatar-img {
+              width: 100%;
+              height: 100%;
+              border-radius: 50%;
+            }
+  
+            .avatar-fallback {
+              font-size: 56px;
+              font-weight: bold;
+              color: #fff;
+            }
+  
+            .host-crown {
+              position: absolute;
+              top: -20px;
+              right: -10px;
+              font-size: 40px;
+              filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+            }
+          }
+  
+          .nickname {
+            font-size: 28px;
+            color: #e2e8f0;
+            margin-bottom: 8px;
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+  
+          .status-badge {
+            font-size: 22px;
+            padding: 4px 16px;
+            border-radius: 12px;
+            
+            &.ready { color: #10b981; background: rgba(16, 185, 129, 0.1); }
+            &.waiting { color: #94a3b8; background: #1e293b; }
+          }
+        }
+  
+        // 空位（邀请好友）
+        &.empty {
+          .dashed-circle {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            border: 4px dashed #475569;
+            background: rgba(30, 41, 59, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+            transition: all 0.2s;
+  
+            .plus-icon {
+              font-size: 64px;
+              color: #64748b;
+              font-weight: 300;
+            }
+          }
+  
+          .invite-text {
+            font-size: 26px;
+            color: #64748b;
+          }
+  
+          &:active .dashed-circle {
+            border-color: #eab308;
+            background: rgba(234, 179, 8, 0.1);
+            .plus-icon { color: #eab308; }
+          }
+        }
+      }
+    }
+  
+    // 底部按钮区
+    .footer {
+      padding: 32px 48px calc(48px + env(safe-area-inset-bottom));
+      background: linear-gradient(to top, #0f172a 60%, transparent);
+      
+      .btn-main {
+        width: 100%;
+        height: 110px;
+        line-height: 110px;
+        background: linear-gradient(to right, #f59e0b, #d97706);
+        color: #0f172a;
+        font-size: 36px;
+        font-weight: bold;
+        border-radius: 56px;
+        box-shadow: 0 12px 30px rgba(234, 179, 8, 0.25);
+        border: none;
+  
+        &::after { display: none; }
+  
+        &[disabled] {
+          background: #1e293b;
+          color: #64748b;
+          box-shadow: none;
+        }
+  
+        &.cancel {
+          background: #334155;
+          color: #e2e8f0;
+          box-shadow: none;
+        }
+  
+        &:active:not([disabled]) {
+          transform: scale(0.98);
+        }
+      }
+    }
   }
-
-  .avatar {
-    width: 100px;
-    height: 100px;
-    border-radius: 50%;
-    background: #d8dce6;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
+  
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.9); }
   }
-
-  .avatar-img { width: 100px; height: 100px; }
-
-  .avatar-fallback {
-    font-size: 44px;
-    color: #fff;
-    font-weight: 600;
-  }
-
-  .nickname {
-    font-size: 26px;
-    color: #333;
-    margin-top: 10px;
-    max-width: 132px;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
-  .badge {
-    font-size: 20px;
-    padding: 2px 14px;
-    border-radius: 20px;
-    margin-top: 8px;
-  }
-
-  .badge.host { background: #fff3d6; color: #b7791f; }
-  .badge.ready { background: #d8f5e3; color: #2f855a; }
-  .badge.waiting { background: #eceef2; color: #9aa0ac; }
-
-  .footer {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    padding: 24px 32px calc(24px + env(safe-area-inset-bottom));
-    background: #fff;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
-    display: flex;
-    gap: 20px;
-  }
-
-  .btn-main {
-    flex: 1;
-    background: #f0b429;
-    color: #1a2238;
-    font-size: 32px;
-    font-weight: 600;
-    border-radius: 48px;
-    margin: 0;
-
-    &[disabled] { background: #e6e8ed; color: #b0b4bd; }
-    &.cancel { background: #eceef2; color: #666; }
-  }
-
-  .btn-leave {
-    width: 180px;
-    background: #f5f6fa;
-    color: #888;
-    font-size: 30px;
-    border-radius: 48px;
-    margin: 0;
-  }
-}

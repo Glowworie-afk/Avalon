@@ -4,7 +4,7 @@ import Taro, { useRouter, useShareAppMessage } from '@tarojs/taro'
 import { ensureSocket, sendMessage, onMessage } from '../../utils/socket'
 import { ensureLogin, whoAmI } from '../../utils/auth'
 import { getProfile } from '../../utils/profile'
-import RoleConfig from '../../components/RoleConfig'
+import RoleDeal from '../../components/RoleDeal'
 import GameBoard from '../../components/GameBoard'
 import {
   ClientEvent,
@@ -21,12 +21,12 @@ import {
 } from '@avalon/shared'
 import './index.scss'
 
-/**
- * 房间页（大厅）。承载两种入口：
- *   mode=create —— 进来后发 CREATE_ROOM（带配置），服务端建房并回 ROOM_UPDATE。
- *   mode=join   —— 进来后发 JOIN_ROOM（带房间号）。
- * 之后所有人靠 ROOM_UPDATE 全量刷新，房主可改配置 / 开始，其他人准备。
- */
+import { GamePhaseMocks, MOCK_MY_OPENID, mockRoleInfo } from '../../mocks/game'
+
+// 1. 👉 把这里改成 false，关闭上帝模式，恢复大厅视图
+const DEBUG_MODE = true 
+const CURRENT_TEST_PHASE = 'teamBuilding'
+
 export default function Room() {
   const router = useRouter()
   const mode = router.params.mode ?? 'join'
@@ -37,10 +37,9 @@ export default function Room() {
   const [voteResult, setVoteResult] = useState<VoteResultPayload | null>(null)
   const [questResult, setQuestResult] = useState<QuestResultPayload | null>(null)
   const [gameOver, setGameOver] = useState<GameOverPayload | null>(null)
-  // 分享回调可能拿到旧闭包，用 ref 保证读到最新房间号
+  const [dealDone, setDealDone] = useState(false)
   const roomIdRef = useRef('')
 
-  // 转发给好友 / 群：分享卡片的 path 带上房间号，对方点开直达本房间自动加入
   useShareAppMessage(() => ({
     title: '快来玩阿瓦隆！点我直接加入房间',
     path: roomIdRef.current
@@ -49,11 +48,17 @@ export default function Room() {
   }))
 
   useEffect(() => {
+    if (DEBUG_MODE) {
+      setMyOpenid(MOCK_MY_OPENID)
+      setRoom(GamePhaseMocks[CURRENT_TEST_PHASE])
+      setRoleInfo(mockRoleInfo as any)
+      return
+    }
+
     let unsub = () => {}
     ;(async () => {
       try {
         await ensureLogin()
-        // 通过分享链接进来的人可能还没注册，先去填名称/头像
         if (mode === 'join') {
           const profile = await getProfile()
           if (!profile) {
@@ -100,22 +105,12 @@ export default function Room() {
       }
     })()
     return () => unsub()
-  }, [])
+  }, [mode, router.params])
 
   const me = room?.players.find((p) => p.openid === myOpenid)
   const isHost = !!me?.isHost
   const total = room?.config.playerCount ?? 0
   const joined = room?.players.length ?? 0
-
-  const copyCode = () => {
-    if (!room) return
-    Taro.setClipboardData({ data: room.roomId })
-  }
-
-  const onConfigChange = (config: GameConfig) => {
-    if (!isHost) return
-    sendMessage(ClientEvent.UPDATE_CONFIG, { config })
-  }
 
   const toggleReady = () => sendMessage(ClientEvent.TOGGLE_READY, {})
   const startGame = () => sendMessage(ClientEvent.START_GAME, {})
@@ -127,16 +122,28 @@ export default function Room() {
 
   if (!room) {
     return (
-      <View className='room room-loading'>
-        <Text>连接中…</Text>
+      <View className='room-page loading'>
+        <Text className='loading-icon'>🛡️</Text>
+        <Text>集结骑士中…</Text>
       </View>
     )
   }
-
-  // 游戏已开始：渲染对局面板
   if (room.status === 'playing' && room.game) {
+    
+    // 分支 A：如果还没确认身份，且拿到了发牌数据，展示发牌抽卡动画
+    if (!dealDone && roleInfo) {
+      return (
+        <RoleDeal 
+          room={room} 
+          roleInfo={roleInfo} 
+          onComplete={() => setDealDone(true)} 
+        />
+      )
+    }
+
+    // 分支 B：身份确认完毕，正式进入对局主盘面
     return (
-      <View className='room'>
+      <View className='room-page'>
         <GameBoard
           room={room}
           myOpenid={myOpenid}
@@ -149,64 +156,62 @@ export default function Room() {
     )
   }
 
-  const allReady = room.players.every((p) => p.isReady)
-  const canStart = isHost && joined === total && allReady
+  // 2. 👉 拦截解除：只要是房主，就可以无视人数直接开始游戏
+  const canStart = isHost 
+  const emptySlots = Array.from({ length: total - joined })
 
   return (
-    <View className='room'>
-      {/* 房间号 + 邀请 */}
-      <View className='room-header'>
-        <View className='code-wrap' onClick={copyCode}>
-          <Text className='code-label'>房间号</Text>
-          <Text className='code'>{room.roomId}</Text>
-        </View>
-        <Text className='count'>{joined}/{total} 人</Text>
-      </View>
-
-      <Button className='invite-btn' openType='share'>
-        邀请好友 / 分享到群
-      </Button>
-
-      {/* 配置（房主可改，其他人只读） */}
-      <RoleConfig config={room.config} editable={isHost} onChange={onConfigChange} />
-
-      {/* 玩家列表 */}
-      <View className='players'>
-        {room.players.map((p) => (
-          <View key={p.openid} className={`player ${p.connected ? '' : 'offline'}`}>
-            <View className='avatar'>
-              {p.avatarUrl ? (
-                <Image className='avatar-img' src={p.avatarUrl} mode='aspectFill' />
-              ) : (
-                <Text className='avatar-fallback'>{p.nickname.slice(0, 1)}</Text>
-              )}
-            </View>
-            <Text className='nickname'>{p.nickname}</Text>
-            {p.isHost ? (
-              <Text className='badge host'>房主</Text>
-            ) : p.isReady ? (
-              <Text className='badge ready'>已准备</Text>
-            ) : (
-              <Text className='badge waiting'>未准备</Text>
-            )}
+    <View className='room-page'>
+      <View className='content'>
+        <View className='room-summary'>
+          <Text className='status-text'>等待骑士入座 ({joined}/{total})</Text>
+          <View className='tags'>
+            <Text className='tag'>{total} 人局</Text>
+            {room.config.useLadyOfLake && <Text className='tag highlight'>湖中仙女</Text>}
+            {room.config.useLancelot && <Text className='tag highlight'>兰斯洛特</Text>}
           </View>
-        ))}
+        </View>
+
+        <View className={`player-grid count-${total}`}>
+          {room.players.map((p) => (
+            <View key={p.openid} className={`seat occupied ${p.connected ? '' : 'offline'}`}>
+              <View className={`avatar-wrap ${p.isReady ? 'is-ready' : ''}`}>
+                {p.avatarUrl ? (
+                  <Image className='avatar-img' src={p.avatarUrl} mode='aspectFill' />
+                ) : (
+                  <Text className='avatar-fallback'>{p.nickname.slice(0, 1)}</Text>
+                )}
+                {p.isHost && <Text className='host-crown'>👑</Text>}
+              </View>
+              <Text className='nickname'>{p.nickname}</Text>
+              <Text className={`status-badge ${p.isReady ? 'ready' : 'waiting'}`}>
+                {p.isReady ? '已准备' : '未准备'}
+              </Text>
+            </View>
+          ))}
+
+          {emptySlots.map((_, idx) => (
+            <Button key={`empty-${idx}`} className='seat empty' openType='share'>
+              <View className='dashed-circle'>
+                <Text className='plus-icon'>+</Text>
+              </View>
+              <Text className='invite-text'>邀请好友</Text>
+            </Button>
+          ))}
+        </View>
       </View>
 
-      {/* 底部操作 */}
       <View className='footer'>
         {isHost ? (
+          // 👉 按钮文案也同步更新，直接显示强制开始
           <Button className='btn-main' disabled={!canStart} onClick={startGame}>
-            {joined < total ? `还差 ${total - joined} 人` : allReady ? '开始游戏' : '等待玩家准备'}
+            强制开始游戏 ({joined}/{total})
           </Button>
         ) : (
           <Button className={`btn-main ${me?.isReady ? 'cancel' : ''}`} onClick={toggleReady}>
-            {me?.isReady ? '取消准备' : '准备'}
+            {me?.isReady ? '取消准备' : '准备就绪'}
           </Button>
         )}
-        <Button className='btn-leave' onClick={leave}>
-          退出房间
-        </Button>
       </View>
     </View>
   )

@@ -1,77 +1,138 @@
 .register {
-  min-height: 100vh;
-  background: #f5f6fa;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0 60px;
-  box-sizing: border-box;
-
-  .reg-title {
-    margin-top: 100px;
-    margin-bottom: 60px;
-    font-size: 40px;
-    font-weight: 600;
-    color: #1a1a1a;
-  }
-
-  .avatar-btn {
-    width: 180px;
-    height: 180px;
-    padding: 0;
-    margin: 0 0 50px;
-    border-radius: 50%;
-    overflow: hidden;
-    background: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    &::after {
-      border: none;
-    }
-  }
-
-  .avatar-img {
-    width: 180px;
-    height: 180px;
-  }
-
-  .avatar-placeholder {
+    min-height: 100vh;
+    background-color: #0f172a; // 统一的深邃石板黑
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-  }
-
-  .avatar-plus {
-    font-size: 56px;
-    color: #c0c4cc;
-  }
-
-  .avatar-tip {
-    font-size: 24px;
-    color: #c0c4cc;
-    margin-top: 8px;
-  }
-
-  .nickname-input {
-    width: 100%;
-    height: 96px;
-    background: #fff;
-    border-radius: 16px;
-    padding: 0 32px;
+    padding: 0 48px;
     box-sizing: border-box;
-    font-size: 32px;
-    margin-bottom: 60px;
+    color: #e2e8f0;
+    
+    .header-section {
+      margin-top: 100px;
+      margin-bottom: 80px;
+      text-align: center;
+      
+      .reg-title {
+        font-size: 56px;
+        font-weight: 900;
+        color: #fff;
+        letter-spacing: 4px;
+        display: block;
+      }
+      
+      .reg-subtitle {
+        margin-top: 16px;
+        font-size: 28px;
+        color: #94a3b8;
+        display: block;
+      }
+    }
+    
+    .avatar-btn {
+      width: 220px;
+      height: 220px;
+      padding: 0;
+      margin: 0 0 80px;
+      border-radius: 50%;
+      background: #1e293b;
+      border: 4px solid #334155;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: all 0.2s;
+      
+      &::after {
+        border: none;
+      }
+      
+      &:active {
+        transform: scale(0.95);
+      }
+      
+      &.has-avatar {
+        border-color: #eab308; // 有头像时亮起金色边框
+      }
+      
+      .avatar-img {
+        width: 100%;
+        height: 100%;
+      }
+      
+      .avatar-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      
+        .avatar-icon {
+          font-size: 72px;
+          color: #94a3b8;
+          margin-bottom: 8px;
+        }
+      
+        .avatar-tip {
+          font-size: 24px;
+          color: #64748b;
+          font-weight: bold;
+          letter-spacing: 2px;
+        }
+      }
+    }
+    
+    .input-group {
+      width: 100%;
+      margin-bottom: 80px;
+      
+      .label {
+        font-size: 24px;
+        color: #94a3b8;
+        font-weight: bold;
+        margin-bottom: 16px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        display: block;
+        padding-left: 16px;
+      }
+      
+      .nickname-input {
+        width: 100%;
+        height: 110px;
+        background: #020617; // 极黑底色
+        border: 2px solid #1e293b;
+        border-radius: 32px;
+        padding: 0 40px;
+        box-sizing: border-box;
+        font-size: 36px;
+        font-weight: 500;
+        color: #e2e8f0;
+        transition: border-color 0.3s;
+      
+        &:focus {
+          border-color: #eab308; // 聚焦时亮起金边
+        }
+      }
+    }
+    
+    .submit-btn {
+      width: 100%;
+      height: 110px;
+      line-height: 110px;
+      background: linear-gradient(to right, #f59e0b, #d97706);
+      color: #0f172a;
+      font-size: 36px;
+      font-weight: bold;
+      border-radius: 56px;
+      box-shadow: 0 12px 30px rgba(234, 179, 8, 0.25);
+      border: none;
+      
+      &::after { display: none; }
+      
+      &:active {
+        transform: scale(0.98);
+        background: #facc15;
+      }
+    }
   }
-
-  .submit-btn {
-    width: 100%;
-    background: #f0b429;
-    color: #1a2238;
-    font-size: 34px;
-    font-weight: 600;
-    border-radius: 48px;
-  }
-}

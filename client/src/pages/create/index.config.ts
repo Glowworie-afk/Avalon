@@ -1,3 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: '创建房间',
+    navigationBarTitleText: '配置房间',
+    navigationStyle: 'custom' // 开启全屏沉浸式
 })
