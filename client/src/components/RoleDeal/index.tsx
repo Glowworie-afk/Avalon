@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { View, Text, Button, Image } from '@tarojs/components'
-import { type RoleInfo, type PublicRoom } from '@avalon/shared'
+import { ROLE_META, type RoleInfo, type PublicRoom } from '@avalon/shared'
 import './index.scss'
 
 interface RoleDealProps {
@@ -15,6 +15,7 @@ const SHUFFLE_POOL = ['梅林', '派西维尔', '忠臣', '莫甘娜', '刺客',
 export default function RoleDeal({ room, roleInfo, onComplete }: RoleDealProps) {
   const [isShuffling, setIsShuffling] = useState(true)
   const [flashName, setFlashName] = useState('洗牌中...')
+  const roleMeta = ROLE_META[roleInfo.role]
 
   useEffect(() => {
     // 模拟洗牌动画：每 80ms 切换一次名字，持续 2 秒
@@ -57,8 +58,8 @@ export default function RoleDeal({ room, roleInfo, onComplete }: RoleDealProps) 
             {roleInfo.team === 'good' ? '🛡️' : '🗡️'}
           </Text>
           
-          <Text className='role-name'>{roleInfo.name}</Text>
-          <Text className='role-desc'>{roleInfo.desc}</Text>
+          <Text className='role-name'>{roleMeta.name}</Text>
+          <Text className='role-desc'>{roleMeta.desc}</Text>
 
           {/* 视野展示区：显示我能看到的人 */}
           {knownPlayers && knownPlayers.length > 0 && (

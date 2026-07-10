@@ -1,269 +1,622 @@
 import { useEffect, useState } from 'react'
-import { View, Text, Button } from '@tarojs/components'
+import { View, Text, Button, Image } from '@tarojs/components'
+import Taro from '@tarojs/taro'
 import { sendMessage } from '../../utils/socket'
 import {
   ClientEvent,
-  teamSize,
-  failsRequired,
-  TOTAL_ROUNDS,
-  MAX_REJECTS,
+  MISSION_TEAM_SIZE,
   ROLE_META,
+  failsRequired,
+  type GameOverPayload,
+  type LadyResultPayload,
+  type PublicPlayer,
   type PublicRoom,
+  type QuestResultPayload,
   type RoleInfo,
   type VoteResultPayload,
-  type QuestResultPayload,
-  type GameOverPayload,
 } from '@avalon/shared'
 import './index.scss'
 
-interface Props {
+interface GameBoardProps {
   room: PublicRoom
   myOpenid: string
   roleInfo: RoleInfo | null
-  voteResult: VoteResultPayload | null
-  questResult: QuestResultPayload | null
-  gameOver: GameOverPayload | null
+  voteResult?: VoteResultPayload | null
+  questResult?: QuestResultPayload | null
+  gameOver?: GameOverPayload | null
+  ladyResult?: LadyResultPayload | null
 }
 
-/**
- * 对局面板（Day 4：组队 + 投票）。
- * 每轮人数表、否决轨、队长组队点选、赞成/反对、票数结算揭晓、坏人胜结算。
- * 任务执行成败（Day 5）暂为占位。
- */
-export default function GameBoard({ room, myOpenid, roleInfo, voteResult, questResult, gameOver }: Props) {
-  const g = room.game
-  const players = [...room.players].sort((a, b) => a.seat - b.seat)
-  const count = room.config.playerCount
+export default function GameBoard({ room, myOpenid, roleInfo, questResult, gameOver, ladyResult }: GameBoardProps) {
+  const game = room.game
+  if (!game) return null
 
-  const [selected, setSelected] = useState<number[]>([])
-  const [hasVoted, setHasVoted] = useState(false)
-  const [hasQuested, setHasQuested] = useState(false)
-  const [roleVisible, setRoleVisible] = useState(false)
+  const me = room.players.find(p => p.openid === myOpenid)
+  const isMyTurn = room.players[game.leaderSeat]?.openid === myOpenid
+  const isTeamMember = me ? game.proposedTeam.includes(me.seat) : false
 
-  // 每进入一轮新投票（轮次或提名变化），重置本地的"已投票"
-  const voteKey = `${g?.round}-${(g?.proposedTeam ?? []).join(',')}`
-  useEffect(() => setHasVoted(false), [voteKey])
-  useEffect(() => setHasQuested(false), [g?.phase, g?.round, (g?.proposedTeam ?? []).join(',')])
-  // 回到组队阶段时清空已选
+  const questSizes = MISSION_TEAM_SIZE[room.config.playerCount] || [2, 3, 2, 3, 3]
+  const currentTeamSize = questSizes[game.round - 1] ?? 0
+  const leader = room.players.find((p) => p.seat === game.leaderSeat)
+  const requiredFails = failsRequired(room.config.playerCount, game.round)
+
+  // 本地状态：选人、查看身份
+  const [localSelected, setLocalSelected] = useState<number[]>(game.proposedTeam || [])
+  const [showRole, setShowRole] = useState(false) // 控制左上角眼睛的闭合状态
+  const [dismissedLadyResultKey, setDismissedLadyResultKey] = useState('')
+
   useEffect(() => {
-    if (g?.phase === 'team_building') setSelected([])
-  }, [g?.phase, g?.round, g?.leaderSeat])
+    setLocalSelected(game.proposedTeam || [])
+  }, [game.phase, game.round, game.proposedTeam])
 
-  if (!g) return null
-
-  const leader = players.find((p) => p.seat === g.leaderSeat)
-  const isLeader = leader?.openid === myOpenid
-  const need = teamSize(count, g.round)
-  const proposed = new Set(g.proposedTeam)
-  const me = players.find((p) => p.openid === myOpenid)
-  const onQuestTeam = me ? proposed.has(me.seat) : false
-
-  const toggleSelect = (seat: number) => {
-    if (!isLeader || g.phase !== 'team_building') return
-    setSelected((prev) =>
-      prev.includes(seat) ? prev.filter((s) => s !== seat) : prev.length < need ? [...prev, seat] : prev,
-    )
+  const togglePlayerSelect = (seat: number) => {
+    if (!isMyTurn || game.phase !== 'team_building') return
+    if (localSelected.includes(seat)) {
+      setLocalSelected(localSelected.filter(id => id !== seat))
+    } else {
+      if (localSelected.length >= currentTeamSize) {
+        Taro.showToast({ title: '车队已满', icon: 'none' })
+        return
+      }
+      setLocalSelected([...localSelected, seat])
+    }
   }
 
   const submitTeam = () => {
-    if (selected.length !== need) return
-    sendMessage(ClientEvent.PROPOSE_TEAM, { seats: selected })
+    sendMessage(ClientEvent.PROPOSE_TEAM, { seats: localSelected })
   }
+
   const vote = (approve: boolean) => {
     sendMessage(ClientEvent.VOTE, { approve })
-    setHasVoted(true)
   }
-  const quest = (fail: boolean) => {
+
+  const submitQuest = (fail: boolean) => {
     sendMessage(ClientEvent.QUEST_ACTION, { fail })
-    setHasQuested(true)
   }
 
-  const nickOf = (openid: string) => players.find((p) => p.openid === openid)?.nickname ?? openid
-  const nightLines = buildNightLines(roleInfo, nickOf)
+  const inspectLady = (targetOpenid: string) => {
+    sendMessage(ClientEvent.LADY_INSPECT, { targetOpenid })
+  }
 
-  return (
-    <View className='game'>
-      <View
-        className={`role-card ${roleVisible ? 'show' : ''}`}
-        onTouchStart={() => setRoleVisible(true)}
-        onTouchEnd={() => setRoleVisible(false)}
-        onTouchCancel={() => setRoleVisible(false)}
-      >
-        {roleInfo && roleVisible ? (
-          <>
-            <Text className='role-name'>{ROLE_META[roleInfo.role].name}</Text>
-            <Text className={`role-team ${roleInfo.team}`}>{roleInfo.team === 'good' ? '好人阵营' : '坏人阵营'}</Text>
-            <View className='night-info'>
-              {nightLines.map((line) => (
-                <Text key={line} className='night-line'>{line}</Text>
-              ))}
-            </View>
-          </>
-        ) : (
-          <>
-            <Text className='role-name hidden'>{roleInfo ? '长按查看身份' : '等待身份信息'}</Text>
-            <Text className='role-team'>松手自动隐藏</Text>
-          </>
-        )}
-      </View>
+  const assassinate = (targetOpenid: string) => {
+    sendMessage(ClientEvent.ASSASSINATE, { targetOpenid })
+  }
 
-      {/* 任务进度 + 每轮人数表 */}
-      <View className='track'>
-        {Array.from({ length: TOTAL_ROUNDS }, (_, i) => {
-          const round = i + 1
-          const result = g.questResults[i] // 'success' | 'fail' | undefined（Day 5 才有）
-          const current = round === g.round
-          const need2 = failsRequired(count, round) === 2
+  const successCount = game.questResults.filter((result) => result === 'success').length
+  const failCount = game.questResults.filter((result) => result === 'fail').length
+  const phaseLabel = game.phase === 'team_building'
+    ? '组建车队'
+    : game.phase === 'voting'
+      ? '全员投票'
+      : game.phase === 'quest'
+        ? '任务执行'
+        : game.phase === 'lady'
+          ? '湖中仙女'
+          : game.phase === 'assassin'
+            ? '刺杀梅林'
+            : '结算中'
+  const proposalSeats = game.phase === 'team_building' ? localSelected : game.proposedTeam
+  const proposalPlayers = proposalSeats
+    .map((seat) => room.players.find((p) => p.seat === seat))
+    .filter((p): p is PublicPlayer => Boolean(p))
+  const remainingSlots = Math.max(0, currentTeamSize - proposalPlayers.length)
+  const proposalSlots = Array.from({ length: currentTeamSize }, (_, index) => proposalPlayers[index] ?? null)
+  const ladyHolder = room.players.find((p) => p.seat === game.ladyOfLakeHolder)
+  const isLadyHolder = ladyHolder?.openid === myOpenid
+
+  if (gameOver) {
+    const revealedRoles = gameOver.revealedRoles ?? []
+    const goodRoles = revealedRoles.filter((p) => p.team === 'good')
+    const evilRoles = revealedRoles.filter((p) => p.team === 'evil')
+
+    const renderRoleColumn = (team: 'good' | 'evil', title: string, players: typeof revealedRoles) => (
+      <View className={'reveal-column ' + team}>
+        <View className='reveal-column-head'>
+          <Text className='reveal-column-title'>{title}</Text>
+          <Text className='reveal-column-count'>{players.length} 人</Text>
+        </View>
+        {players.map((p) => {
+          const meta = ROLE_META[p.role]
           return (
-            <View
-              key={round}
-              className={`node ${current ? 'current' : ''} ${result ?? ''}`}
-            >
-              <Text className='node-size'>{teamSize(count, round)}</Text>
-              {need2 && <Text className='node-flag'>两失败</Text>}
-              <Text className='node-round'>第{round}轮</Text>
+            <View key={p.openid} className='reveal-row'>
+              <Text className='reveal-seat'>{p.seat + 1}</Text>
+              <View className='reveal-identity'>
+                <Text className='reveal-player'>{p.nickname}</Text>
+                <Text className='reveal-role'>{meta.name}</Text>
+              </View>
             </View>
           )
         })}
       </View>
+    )
 
-      {/* 否决轨 */}
-      <View className='rejects'>
-        <Text className='rejects-label'>否决轨</Text>
-        <View className='rejects-dots'>
-          {Array.from({ length: MAX_REJECTS }, (_, i) => (
-            <View
-              key={i}
-              className={`dot ${i < g.rejectCount ? 'on' : ''} ${i === MAX_REJECTS - 1 ? 'danger' : ''}`}
-            />
-          ))}
+    return (
+      <View className='game-board game-over-board'>
+        <View className={'game-over-hero ' + gameOver.winner}>
+          <Text className='game-over-kicker'>最终结算</Text>
+          <Text className='game-over-title'>
+            {gameOver.winner === 'good' ? '好人阵营胜利' : '坏人阵营胜利'}
+          </Text>
+          <Text className='game-over-reason'>{gameOver.reason}</Text>
         </View>
-        <Text className='rejects-hint'>连续 {MAX_REJECTS} 次否决坏人胜</Text>
-      </View>
 
-      {/* 上一轮投票揭晓 */}
-      {voteResult && g.phase !== 'voting' && (
-        <View className={`vote-result ${voteResult.approved ? 'pass' : 'fail'}`}>
-          <Text className='vr-title'>{voteResult.approved ? '提案通过' : '提案被否决'}</Text>
-          <View className='vr-list'>
-            {voteResult.votes.map((v) => (
-              <Text key={v.openid} className={`vr-chip ${v.approve ? 'y' : 'n'}`}>
-                {nickOf(v.openid)} {v.approve ? '赞成' : '反对'}
-              </Text>
-            ))}
+        <View className='final-score-panel'>
+          <View className='final-score-card success'>
+            <Text className='score-number'>{successCount}</Text>
+            <Text className='score-label'>任务成功</Text>
           </View>
-        </View>
-      )}
-
-      {questResult && (
-        <View className={`quest-result ${questResult.result}`}>
-          <Text className='qr-title'>第{questResult.round}轮任务{questResult.result === 'success' ? '成功' : '失败'}</Text>
-          <Text className='qr-meta'>
-            失败牌 {questResult.failCount}/{questResult.requiredFails}，当前成功 {questResult.successCount} / 失败 {questResult.failResultCount}
-          </Text>
-        </View>
-      )}
-
-      {/* 队长 */}
-      <View className='leader-bar'>
-        <Text>当前队长：{leader?.nickname ?? '—'}</Text>
-        {isLeader && <Text className='you'>（你）</Text>}
-      </View>
-
-      {/* 主体：按阶段 */}
-      {gameOver ? (
-        <View className='over'>
-          <Text className='over-title'>{gameOver.winner === 'evil' ? '坏人阵营获胜' : '好人阵营获胜'}</Text>
-          <Text className='over-reason'>{gameOver.reason}</Text>
-        </View>
-      ) : g.phase === 'team_building' ? (
-        <View className='phase'>
-          <Text className='phase-tip'>
-            {isLeader ? `请选择 ${need} 名队员（已选 ${selected.length}）` : `等待队长组队（需 ${need} 人）`}
-          </Text>
-          <View className='seats'>
-            {players.map((p) => {
-              const sel = selected.includes(p.seat)
+          <View className='final-mission-track'>
+            {questSizes.map((size, index) => {
+              const result = game.questResults[index]
               return (
-                <View
-                  key={p.openid}
-                  className={`seat ${sel ? 'sel' : ''} ${p.seat === g.leaderSeat ? 'leader' : ''}`}
-                  onClick={() => toggleSelect(p.seat)}
-                >
-                  <Text className='seat-name'>{p.nickname}</Text>
-                  <Text className='seat-no'>{p.seat === g.leaderSeat ? '队长' : `#${p.seat}`}</Text>
+                <View key={index} className={'final-mission-dot ' + (result ?? 'pending')}>
+                  <Text className='final-round'>{index + 1}</Text>
+                  <Text className='final-size'>{size}人</Text>
                 </View>
               )
             })}
           </View>
-          {isLeader && (
-            <Button className='action' disabled={selected.length !== need} onClick={submitTeam}>
-              提交提案
-            </Button>
+          <View className='final-score-card fail'>
+            <Text className='score-number'>{failCount}</Text>
+            <Text className='score-label'>任务失败</Text>
+          </View>
+        </View>
+
+        <View className='role-reveal-panel'>
+          <Text className='role-reveal-title'>身份揭晓</Text>
+          <View className='role-reveal-columns'>
+            {renderRoleColumn('good', '好人阵营', goodRoles)}
+            {renderRoleColumn('evil', '坏人阵营', evilRoles)}
+          </View>
+        </View>
+      </View>
+    )
+  }
+
+  // 渲染总任务概览：每轮人数 + 成功/失败状态
+  const renderMissionOverview = () => (
+    <View className='mission-overview'>
+      <View className='mission-score-row'>
+        <View className='score-chip success'>
+          <Text className='score-value'>{successCount}</Text>
+          <Text className='score-text'>成功</Text>
+        </View>
+        <View className='phase-chip'>
+          <Text className='phase-round'>第 {game.round} 轮任务</Text>
+          <Text className='phase-name'>{phaseLabel}</Text>
+        </View>
+        <View className='score-chip fail'>
+          <Text className='score-value'>{failCount}</Text>
+          <Text className='score-text'>失败</Text>
+        </View>
+      </View>
+
+      <View className='mission-track'>
+        {questSizes.map((size, index) => {
+          const result = game.questResults[index]
+          let statusClass = 'pending'
+          if (result === 'success') statusClass = 'success'
+          if (result === 'fail') statusClass = 'fail'
+          const isCurrent = index === game.round - 1 && game.phase !== 'over'
+          const statusText = result === 'success' ? '胜' : result === 'fail' ? '败' : isCurrent ? '今' : `${size}`
+
+          return (
+            <View key={index} className={`mission-node ${statusClass} ${isCurrent ? 'current' : ''}`}>
+              <Text className='mission-round'>{index + 1}</Text>
+              <Text className='mission-state'>{statusText}</Text>
+            </View>
+          )
+        })}
+      </View>
+    </View>
+  )
+
+  // 渲染否决警戒线
+  const renderRejectTrack = () => (
+    <View className='reject-track'>
+      <Text className='reject-label'>两次否决后强制发车</Text>
+      <View className='dots'>
+        {[1, 2].map(num => (
+          <View key={num} className={`dot ${game.rejectCount >= num ? 'danger' : ''}`} />
+        ))}
+      </View>
+    </View>
+  )
+
+  // 按座位号稳定展示圆桌玩家
+  const sortedPlayers = [...room.players].sort((a, b) => a.seat - b.seat)
+  const getSeatStyle = (index: number, total: number) => {
+    const angle = -90 + (360 / Math.max(total, 1)) * index
+    const rad = (angle * Math.PI) / 180
+    const radiusX = total <= 6 ? 38 : total <= 8 ? 40 : 42
+    const radiusY = total <= 6 ? 36 : total <= 8 ? 39 : 41
+    return {
+      left: `${50 + Math.cos(rad) * radiusX}%`,
+      top: `${50 + Math.sin(rad) * radiusY}%`,
+    }
+  }
+
+  const renderPlayerSeat = (p: PublicPlayer, index: number, total: number) => {
+    const isLeader = p.seat === game.leaderSeat
+    const isSelected = game.phase === 'team_building'
+      ? localSelected.includes(p.seat)
+      : game.proposedTeam.includes(p.seat)
+    const selectionIndex = proposalSeats.indexOf(p.seat)
+
+    return (
+      <View
+        key={p.openid}
+        className={`player-seat ${isSelected ? 'selected' : ''} ${isLeader ? 'leader' : ''} ${p.openid === myOpenid ? 'me' : ''} ${p.connected ? '' : 'offline'}`}
+        style={getSeatStyle(index, total)}
+        onClick={() => togglePlayerSelect(p.seat)}
+      >
+        <View className='avatar-wrap'>
+          {p.avatarUrl ? (
+            <Image src={p.avatarUrl} className='avatar-img' />
+          ) : (
+            <Text className='avatar-fallback'>{p.nickname.slice(0,1)}</Text>
+          )}
+          {isLeader && <View className='leader-badge'><Text>👑</Text></View>}
+          {isSelected && (
+            <View className='selected-badge'>
+              <Text>{selectionIndex + 1}/{currentTeamSize}</Text>
+            </View>
           )}
         </View>
-      ) : g.phase === 'voting' ? (
-        <View className='phase'>
-          <Text className='phase-tip'>对队长的提案投票（{g.votedCount}/{players.length} 已投）</Text>
-          <View className='seats'>
-            {players.map((p) => (
-              <View key={p.openid} className={`seat ${proposed.has(p.seat) ? 'on-team' : ''}`}>
-                <Text className='seat-name'>{p.nickname}</Text>
-                <Text className='seat-no'>{proposed.has(p.seat) ? '上场' : `#${p.seat}`}</Text>
+        <Text className='nickname'>{p.nickname}</Text>
+      </View>
+    )
+  }
+
+  const renderTeamProposalDock = () => {
+    const canSubmit = isMyTurn && proposalPlayers.length === currentTeamSize
+    const actionText = canSubmit ? '确认提案' : `还差 ${remainingSlots} 人`
+
+    return (
+      <View className='team-proposal-dock'>
+        <View className='dock-header'>
+          <View>
+            <Text className='dock-title'>本轮车队</Text>
+            <Text className='dock-subtitle'>
+              {isMyTurn ? '选择出征成员' : `等待 ${leader?.nickname ?? '队长'} 组建车队`}
+            </Text>
+          </View>
+          <Text className='dock-count'>{proposalPlayers.length}/{currentTeamSize}</Text>
+        </View>
+
+        <View className={`proposal-slots count-${currentTeamSize}`}>
+          {proposalSlots.map((player, index) => (
+            <View key={player?.openid ?? `empty-${index}`} className={`proposal-slot ${player ? 'filled' : 'empty'}`}>
+              {player ? (
+                <>
+                  <View className='slot-avatar'>
+                    {player.avatarUrl ? (
+                      <Image src={player.avatarUrl} className='slot-img' />
+                    ) : (
+                      <Text className='slot-fallback'>{player.nickname.slice(0, 1)}</Text>
+                    )}
+                  </View>
+                  <Text className='slot-name'>{player.nickname}</Text>
+                </>
+              ) : (
+                <>
+                  <Text className='slot-plus'>+</Text>
+                  <Text className='slot-name'>空位</Text>
+                </>
+              )}
+            </View>
+          ))}
+        </View>
+
+        {isMyTurn ? (
+          <Button
+            className={`dock-action ${canSubmit ? 'ready' : ''}`}
+            disabled={!canSubmit}
+            onClick={submitTeam}
+          >
+            {actionText}
+          </Button>
+        ) : (
+          <Text className='dock-waiting'>队长确认后进入全员投票</Text>
+        )}
+      </View>
+    )
+  }
+
+
+
+  const renderLadyResultOverlay = () => {
+    if (!ladyResult) return null
+    const resultKey = `${ladyResult.targetOpenid}-${ladyResult.nextHolderSeat}-${ladyResult.targetTeam}`
+    if (dismissedLadyResultKey === resultKey) return null
+    const targetName = ladyResult.targetNickname || room.players.find((p) => p.openid === ladyResult.targetOpenid)?.nickname || '未知玩家'
+    const isGood = ladyResult.targetTeam === 'good'
+    return (
+      <View className='lady-result-mask'>
+        <View className={'lady-result-card ' + ladyResult.targetTeam}>
+          <Text className='lady-result-kicker'>湖中仙女查验结果</Text>
+          <Text className='lady-result-target'>{ladyResult.targetSeat + 1}. {targetName}</Text>
+          <Text className='lady-result-team'>{isGood ? '好人阵营' : '坏人阵营'}</Text>
+          <Text className='lady-result-copy'>结果只向你揭示，湖中仙女令牌已传给该玩家。</Text>
+          <Button className='lady-result-confirm' onClick={() => setDismissedLadyResultKey(resultKey)}>我知道了</Button>
+        </View>
+      </View>
+    )
+  }
+
+  const renderLadyDock = () => {
+    const inspectedSeats = game.ladyHistory ?? []
+    const candidates = room.players.filter((p) => p.openid !== myOpenid && !inspectedSeats.includes(p.seat))
+
+    if (!isLadyHolder) {
+      return (
+        <View className='lady-group waiting'>
+          <Text className='lady-title'>湖中仙女查验</Text>
+          <Text className='lady-subtitle'>等待 {ladyHolder?.nickname ?? '持有者'} 选择查验目标</Text>
+        </View>
+      )
+    }
+
+    return (
+      <View className='lady-group'>
+        <Text className='lady-title'>湖中仙女在你手中</Text>
+        <Text className='lady-subtitle'>选择一名未持有过湖中仙女的玩家，系统只会向你揭示阵营</Text>
+        <View className='lady-targets'>
+          {candidates.map((p) => (
+            <Button key={p.openid} className='lady-target' onClick={() => inspectLady(p.openid)}>
+              <Text>{p.seat + 1}. {p.nickname}</Text>
+            </Button>
+          ))}
+        </View>
+        {ladyResult && (
+          <Text className={'lady-result ' + ladyResult.targetTeam}>
+            上次查验：{ladyResult.targetTeam === 'good' ? '好人阵营' : '坏人阵营'}
+          </Text>
+        )}
+      </View>
+    )
+  }
+
+  const getVisiblePlayers = () => {
+    if (!roleInfo) return []
+    if (roleInfo.knownEvil?.length) {
+      return roleInfo.knownEvil.map((openid) => ({ openid, label: '梅林视野', tone: 'evil' as const }))
+    }
+    if (roleInfo.merlinCandidates?.length) {
+      return roleInfo.merlinCandidates.map((openid) => ({ openid, label: '梅林候选', tone: 'mystery' as const }))
+    }
+    if (roleInfo.fellowEvil?.length) {
+      return roleInfo.fellowEvil.map((openid) => ({ openid, label: '邪恶同伙', tone: 'evil' as const }))
+    }
+    return []
+  }
+
+  const renderVisionPlayer = (item: { openid: string; label: string; tone: 'evil' | 'mystery' }) => {
+    const player = room.players.find((p) => p.openid === item.openid)
+    if (!player) return null
+    return (
+      <View key={item.openid} className={'role-vision-player ' + item.tone}>
+        <View className='role-vision-avatar'>
+          {player.avatarUrl ? (
+            <Image src={player.avatarUrl} className='role-vision-img' />
+          ) : (
+            <Text className='role-vision-fallback'>{player.nickname.slice(0, 1)}</Text>
+          )}
+          <Text className='role-vision-seat'>{player.seat + 1}</Text>
+        </View>
+        <Text className='role-vision-name'>{player.nickname}</Text>
+        <Text className='role-vision-label'>{item.label}</Text>
+      </View>
+    )
+  }
+
+  const renderRoleCardOverlay = () => {
+    if (!showRole) return null
+    const roleMeta = roleInfo ? ROLE_META[roleInfo.role] : null
+    const visiblePlayers = getVisiblePlayers()
+
+    return (
+      <View className='role-card-mask' onClick={() => setShowRole(false)}>
+        <View className={'role-card-panel ' + (roleInfo?.team ?? 'unknown')} onClick={(e) => e.stopPropagation()}>
+          <Button className='role-card-close' onClick={() => setShowRole(false)}>×</Button>
+          <Text className='role-card-kicker'>你的身份牌</Text>
+          <Text className='role-card-icon'>{roleInfo?.team === 'evil' ? '🗡️' : '🛡️'}</Text>
+          <Text className='role-card-name'>{roleMeta?.name ?? '未知身份'}</Text>
+          <Text className='role-card-team'>{roleInfo?.team === 'evil' ? '坏人阵营' : '好人阵营'}</Text>
+          <Text className='role-card-desc'>{roleMeta?.desc ?? '身份信息尚未下发'}</Text>
+
+          <View className='role-vision-panel'>
+            <Text className='role-vision-title'>你能看到的身份信息</Text>
+            {visiblePlayers.length > 0 ? (
+              <View className='role-vision-list'>
+                {visiblePlayers.map((item) => renderVisionPlayer(item))}
+              </View>
+            ) : (
+              <Text className='role-vision-empty'>当前身份没有额外可见信息</Text>
+            )}
+          </View>
+        </View>
+      </View>
+    )
+  }
+
+  const renderQuestDock = () => {
+    const questTeam = game.proposedTeam
+      .map((seat) => room.players.find((p) => p.seat === seat))
+      .filter((p): p is PublicPlayer => Boolean(p))
+    const lastResult = questResult?.round === game.round ? questResult : null
+
+    if (!isTeamMember) {
+      return (
+        <View className='quest-dock waiting'>
+          <View className='quest-dock-header'>
+            <Text className='quest-eyebrow'>任务执行中</Text>
+            <Text className='quest-title'>等待车队提交任务牌</Text>
+            <Text className='quest-subtitle'>本轮 {questTeam.length} 名队员正在决定任务结果</Text>
+          </View>
+          <View className='quest-team-strip'>
+            {questTeam.map((p) => (
+              <View key={p.openid} className='quest-member-pill'>
+                <Text className='quest-member-seat'>{p.seat + 1}</Text>
+                <Text className='quest-member-name'>{p.nickname}</Text>
               </View>
             ))}
           </View>
-          {hasVoted ? (
-            <Text className='voted-tip'>已投票，等待其他人…</Text>
+          <View className='quest-rule-note'>
+            <Text>需要 {requiredFails} 张失败牌才会失败</Text>
+          </View>
+        </View>
+      )
+    }
+
+    return (
+      <View className='quest-dock active'>
+        <View className='quest-dock-header'>
+          <Text className='quest-eyebrow'>第 {game.round} 轮任务</Text>
+          <Text className='quest-title'>你在本轮车队中</Text>
+          <Text className='quest-subtitle'>选择要提交的任务牌</Text>
+        </View>
+
+        <View className='quest-team-strip'>
+          {questTeam.map((p) => (
+            <View key={p.openid} className={'quest-member-pill ' + (p.openid === myOpenid ? 'me' : '')}>
+              <Text className='quest-member-seat'>{p.seat + 1}</Text>
+              <Text className='quest-member-name'>{p.nickname}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View className='quest-rule-note'>
+          <Text>{room.config.playerCount >= 7 && game.round === 4 ? '特殊轮次：' : ''}需要 {requiredFails} 张失败牌才会失败</Text>
+        </View>
+
+        <View className='quest-action-grid'>
+          <Button className='quest-action success' onClick={() => submitQuest(false)}>
+            <Text className='quest-action-label'>任务成功</Text>
+            <Text className='quest-action-hint'>护送远征完成</Text>
+          </Button>
+          {roleInfo?.team === 'evil' ? (
+            <Button className='quest-action fail' onClick={() => submitQuest(true)}>
+              <Text className='quest-action-label'>任务失败</Text>
+              <Text className='quest-action-hint'>暗中破坏任务</Text>
+            </Button>
           ) : (
-            <View className='vote-btns'>
-              <Button className='approve' onClick={() => vote(true)}>赞成</Button>
-              <Button className='reject' onClick={() => vote(false)}>反对</Button>
+            <View className='quest-action locked'>
+              <Text className='quest-action-label'>任务失败</Text>
+              <Text className='quest-action-hint'>好人不能提交失败牌</Text>
             </View>
           )}
         </View>
-      ) : g.phase === 'quest' ? (
-        <View className='phase'>
-          <Text className='phase-tip'>任务执行</Text>
-          <View className='team-show'>
-            {g.proposedTeam.map((s) => (
-              <Text key={s} className='team-chip'>{players.find((p) => p.seat === s)?.nickname}</Text>
+
+        {lastResult && (
+          <Text className={'quest-result-hint ' + lastResult.result}>
+            本轮已结算：{lastResult.result === 'success' ? '成功' : '失败'}
+          </Text>
+        )}
+      </View>
+    )
+  }
+
+  return (
+    <View className='game-board'>
+
+      {/* 1. 右上角：身份牌查看 */}
+      <Button className='role-eye-btn' onClick={() => setShowRole(true)}>
+        <Text className='eye-icon'>👓</Text>
+      </Button>
+      {renderRoleCardOverlay()}
+      {renderLadyResultOverlay()}
+
+      {/* 2. 顶部：任务进度面板 */}
+      <View className='top-dashboard'>
+        <View className='board-title-row'>
+          <View>
+            <Text className='board-title'>阿瓦隆远征</Text>
+            <Text className='board-subtitle'>队长 {leader?.nickname ?? '-'} · 需要 {currentTeamSize} 人</Text>
+          </View>
+        </View>
+        {renderMissionOverview()}
+        {renderRejectTrack()}
+      </View>
+
+      {/* 3. 中部：圆桌玩家列表 */}
+      <View className={`players-layout count-${sortedPlayers.length}`}>
+        <View className='table-aura'>
+          <Text className='table-kicker'>{phaseLabel}</Text>
+          <Text className='table-round'>第 {game.round} 轮</Text>
+          <Text className='table-need'>车队 {proposalPlayers.length}/{currentTeamSize}</Text>
+          <View className='table-team-slots'>
+            {proposalSlots.map((player, index) => (
+              <View key={player?.openid ?? `table-empty-${index}`} className={`table-team-slot ${player ? 'filled' : ''}`}>
+                <Text>{player ? player.seat + 1 : '+'}</Text>
+              </View>
             ))}
           </View>
-          {!onQuestTeam ? (
-            <Text className='placeholder'>等待队员提交任务牌…</Text>
-          ) : hasQuested ? (
-            <Text className='voted-tip'>已提交任务牌，等待队友…</Text>
-          ) : (
-            <View className='vote-btns'>
-              <Button className='approve' onClick={() => quest(false)}>成功</Button>
-              {roleInfo?.team === 'evil' && (
-                <Button className='reject' onClick={() => quest(true)}>失败</Button>
-              )}
-            </View>
-          )}
         </View>
-      ) : null}
+        {sortedPlayers.map((p, index) => renderPlayerSeat(p, index, sortedPlayers.length))}
+      </View>
+
+      {/* 4. 底部：动态操作台 */}
+      <View className='action-console'>
+        <View className='phase-actions'>
+          {
+            // 阶段 A：组建车队 - 队长视角
+            game.phase === 'team_building' && isMyTurn ? (
+              renderTeamProposalDock()
+
+            // 阶段 A：组建车队 - 队员视角
+            ) : game.phase === 'team_building' && !isMyTurn ? (
+              renderTeamProposalDock()
+
+            // 阶段 B：发车投票
+            ) : game.phase === 'voting' ? (
+              <View className='vote-group'>
+                <Text className='vote-title'>是否赞成这支队伍出征？</Text>
+                <View className='vote-buttons'>
+                  <Button className='vote-btn approve' onClick={() => vote(true)}>赞成发车</Button>
+                  <Button className='vote-btn reject' onClick={() => vote(false)}>反对发车</Button>
+                </View>
+              </View>
+
+            // 阶段 C：执行任务
+            ) : game.phase === 'quest' ? (
+              renderQuestDock()
+
+            // 阶段 D：湖中仙女查验
+            ) : game.phase === 'lady' ? (
+              renderLadyDock()
+
+            // 阶段 E：刺客猜梅林
+            ) : game.phase === 'assassin' ? (
+              roleInfo?.role === 'assassin' ? (
+                <View className='assassin-group'>
+                  <Text className='assassin-title'>选择你要刺杀的梅林</Text>
+                  <View className='assassin-targets'>
+                    {room.players
+                      .filter((p) => p.openid !== myOpenid && !roleInfo.fellowEvil?.includes(p.openid))
+                      .map((p) => (
+                        <Button
+                          key={p.openid}
+                          className='assassin-target'
+                          onClick={() => assassinate(p.openid)}
+                        >
+                          {p.nickname}
+                        </Button>
+                      ))}
+                  </View>
+                </View>
+              ) : (
+                <Text className='waiting-text'>三次任务成功，等待刺客进行最后刺杀...</Text>
+              )
+
+            // 阶段 E：兜底/结算阶段
+            ) : (
+              <Text className='waiting-text'>系统演算中...</Text>
+            )
+          }
+        </View>
+      </View>
+
     </View>
   )
-}
-
-function buildNightLines(roleInfo: RoleInfo | null, nickOf: (openid: string) => string): string[] {
-  if (!roleInfo) return []
-  if (roleInfo.role === 'merlin') {
-    return [`你看到的坏人：${names(roleInfo.knownEvil, nickOf)}`]
-  }
-  if (roleInfo.role === 'percival') {
-    return [`你看到的梅林候选：${names(roleInfo.merlinCandidates, nickOf)}`]
-  }
-  if (roleInfo.team === 'evil') {
-    return roleInfo.fellowEvil
-      ? [`你认识的坏人同伴：${names(roleInfo.fellowEvil, nickOf)}`]
-      : ['你是奥伯伦，不与其他坏人互认']
-  }
-  return ['你没有额外夜晚信息']
-}
-
-function names(openids: string[] | undefined, nickOf: (openid: string) => string): string {
-  return openids?.length ? openids.map(nickOf).join('、') : '无'
 }

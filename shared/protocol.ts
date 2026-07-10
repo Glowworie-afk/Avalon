@@ -5,7 +5,7 @@
  * 不会给前后端打包引入额外负担（避免 enum 生成的运行时对象）。
  */
 
-import type { PublicRoom, RoleInfo, GameConfig, GamePhase, Team } from './types'
+import type { PublicRoom, RoleInfo, GameConfig, GamePhase, Team, Role } from './types'
 
 // ===== 客户端 → 服务端（玩家操作）=====
 export const ClientEvent = {
@@ -15,6 +15,8 @@ export const ClientEvent = {
   UPDATE_CONFIG: 'update_config', // 房主改人数/扩展开关
   TOGGLE_READY: 'toggle_ready',
   START_GAME: 'start_game',
+  DEBUG_FILL_BOTS: 'debug_fill_bots', // 本地联调用：自动补齐测试玩家
+  DEBUG_SET_ROLES: 'debug_set_roles', // 本地联调用：指定测试身份
   PROPOSE_TEAM: 'propose_team',
   VOTE: 'vote',
   QUEST_ACTION: 'quest_action',
@@ -33,6 +35,7 @@ export const ServerEvent = {
   VOTE_RESULT: 'vote_result',
   QUEST_RESULT: 'quest_result',
   GAME_OVER: 'game_over',
+  LADY_RESULT: 'lady_result',
   ERROR: 'error',
   WELCOME: 'welcome', // 握手成功（Day 1）
   PONG: 'pong', // 基础链路（Day 1）
@@ -59,6 +62,10 @@ export interface JoinRoomPayload {
 
 export interface UpdateConfigPayload {
   config: Partial<GameConfig>
+}
+
+export interface DebugSetRolesPayload {
+  assignments: { openid: string; role: Role }[]
 }
 
 export interface WelcomePayload {
@@ -89,6 +96,10 @@ export interface VotePayload {
 
 export interface QuestActionPayload {
   fail: boolean // true 出失败牌；好人服务端会强制按成功牌结算
+}
+
+export interface LadyInspectPayload {
+  targetOpenid: string
 }
 
 export interface AssassinatePayload {
@@ -128,10 +139,28 @@ export interface QuestResultPayload {
   failResultCount: number
 }
 
+export interface LadyResultPayload {
+  holderSeat: number
+  targetOpenid: string
+  targetNickname: string
+  targetSeat: number
+  targetTeam: Team
+  nextHolderSeat: number
+}
+
 /** 终局 */
+export interface RevealedRole {
+  openid: string
+  nickname: string
+  seat: number
+  role: Role
+  team: Team
+}
+
 export interface GameOverPayload {
   winner: Team
   reason: string
+  revealedRoles?: RevealedRole[]
 }
 
 /** 构造一条消息的小助手，保证结构统一 */

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, Text, Button, Image } from '@tarojs/components'
+import { View, Text, Button, Image, Picker } from '@tarojs/components'
 import Taro, { useRouter, useShareAppMessage } from '@tarojs/taro'
 import { ensureSocket, sendMessage, onMessage } from '../../utils/socket'
 import { ensureLogin, whoAmI } from '../../utils/auth'
@@ -9,6 +9,8 @@ import GameBoard from '../../components/GameBoard'
 import {
   ClientEvent,
   ServerEvent,
+  buildRoleList,
+  ROLE_META,
   type PublicRoom,
   type GameConfig,
   type RoomUpdatePayload,
@@ -16,16 +18,13 @@ import {
   type VoteResultPayload,
   type QuestResultPayload,
   type GameOverPayload,
+  type LadyResultPayload,
   type RoleInfoPayload,
   type RoleInfo,
+  type Role,
 } from '@avalon/shared'
 import './index.scss'
 
-import { GamePhaseMocks, MOCK_MY_OPENID, mockRoleInfo } from '../../mocks/game'
-
-// 1. 👉 把这里改成 false，关闭上帝模式，恢复大厅视图
-const DEBUG_MODE = true 
-const CURRENT_TEST_PHASE = 'teamBuilding'
 
 export default function Room() {
   const router = useRouter()
@@ -37,7 +36,9 @@ export default function Room() {
   const [voteResult, setVoteResult] = useState<VoteResultPayload | null>(null)
   const [questResult, setQuestResult] = useState<QuestResultPayload | null>(null)
   const [gameOver, setGameOver] = useState<GameOverPayload | null>(null)
+  const [ladyResult, setLadyResult] = useState<LadyResultPayload | null>(null)
   const [dealDone, setDealDone] = useState(false)
+  const [debugRoles, setDebugRoles] = useState<Record<string, Role>>({})
   const roomIdRef = useRef('')
 
   useShareAppMessage(() => ({
@@ -48,13 +49,6 @@ export default function Room() {
   }))
 
   useEffect(() => {
-    if (DEBUG_MODE) {
-      setMyOpenid(MOCK_MY_OPENID)
-      setRoom(GamePhaseMocks[CURRENT_TEST_PHASE])
-      setRoleInfo(mockRoleInfo as any)
-      return
-    }
-
     let unsub = () => {}
     ;(async () => {
       try {
@@ -87,6 +81,9 @@ export default function Room() {
             setQuestResult(msg.payload as QuestResultPayload)
           } else if (msg.type === ServerEvent.GAME_OVER) {
             setGameOver(msg.payload as GameOverPayload)
+          } else if (msg.type === ServerEvent.LADY_RESULT) {
+            const result = msg.payload as LadyResultPayload
+            setLadyResult(result)
           }
         })
 
@@ -107,13 +104,47 @@ export default function Room() {
     return () => unsub()
   }, [mode, router.params])
 
+  useEffect(() => {
+    if (!room || room.status !== 'waiting') return
+
+    const rolePool = buildRoleList(room.config.playerCount, room.config)
+    if (rolePool.length !== room.players.length) return
+
+    setDebugRoles((prev) => {
+      const next: Record<string, Role> = {}
+      room.players
+        .slice()
+        .sort((a, b) => a.seat - b.seat)
+        .forEach((player, index) => {
+          next[player.openid] = prev[player.openid] ?? rolePool[index]!
+        })
+      return next
+    })
+  }, [room])
+
+
   const me = room?.players.find((p) => p.openid === myOpenid)
   const isHost = !!me?.isHost
   const total = room?.config.playerCount ?? 0
   const joined = room?.players.length ?? 0
 
+  const roleOptions = room ? buildRoleList(room.config.playerCount, room.config) : []
+  const roleOptionLabels = roleOptions.map((role) => ROLE_META[role].name)
+  const showDebugRolePicker = isHost && joined === total && roleOptions.length === joined && room?.status === 'waiting'
+
   const toggleReady = () => sendMessage(ClientEvent.TOGGLE_READY, {})
-  const startGame = () => sendMessage(ClientEvent.START_GAME, {})
+  const startGame = () => {
+    if (showDebugRolePicker) {
+      sendMessage(ClientEvent.DEBUG_SET_ROLES, {
+        assignments: room!.players.map((p) => ({
+          openid: p.openid,
+          role: debugRoles[p.openid] ?? roleOptions[p.seat]!,
+        })),
+      })
+    }
+    sendMessage(ClientEvent.START_GAME, {})
+  }
+  const debugFillBots = () => sendMessage(ClientEvent.DEBUG_FILL_BOTS, {})
 
   const leave = () => {
     sendMessage(ClientEvent.LEAVE_ROOM, {})
@@ -128,36 +159,30 @@ export default function Room() {
       </View>
     )
   }
-  if (room.status === 'playing' && room.game) {
+  if ((room.status === 'playing' || gameOver) && room.game) {
     
-    // 分支 A：如果还没确认身份，且拿到了发牌数据，展示发牌抽卡动画
-    if (!dealDone && roleInfo) {
-      return (
-        <RoleDeal 
-          room={room} 
-          roleInfo={roleInfo} 
-          onComplete={() => setDealDone(true)} 
-        />
-      )
+    // 分支 A：发牌抽卡动画
+    if (!gameOver && !dealDone && roleInfo) {
+      // 👉 直接 return 组件，不要套在任何 View 里
+      return <RoleDeal room={room} roleInfo={roleInfo} onComplete={() => setDealDone(true)} />
     }
 
-    // 分支 B：身份确认完毕，正式进入对局主盘面
+    // 分支 B：正式进入对局主盘面
+    // 👉 直接 return GameBoard，彻底摆脱 room-page 的样式束缚！
     return (
-      <View className='room-page'>
-        <GameBoard
-          room={room}
-          myOpenid={myOpenid}
-          roleInfo={roleInfo}
-          voteResult={voteResult}
-          questResult={questResult}
-          gameOver={gameOver}
-        />
-      </View>
+      <GameBoard
+        room={room}
+        myOpenid={myOpenid}
+        roleInfo={roleInfo}
+        voteResult={voteResult}
+        questResult={questResult}
+        gameOver={gameOver}
+        ladyResult={ladyResult}
+      />
     )
   }
 
-  // 2. 👉 拦截解除：只要是房主，就可以无视人数直接开始游戏
-  const canStart = isHost 
+  const canStart = isHost && joined === total && room.players.every((p) => p.isReady)
   const emptySlots = Array.from({ length: total - joined })
 
   return (
@@ -199,14 +224,49 @@ export default function Room() {
             </Button>
           ))}
         </View>
+        {showDebugRolePicker && (
+          <View className='debug-role-panel'>
+            <Text className='debug-role-title'>测试角色配置</Text>
+            {room.players
+              .slice()
+              .sort((a, b) => a.seat - b.seat)
+              .map((p) => {
+                const selectedRole = debugRoles[p.openid] ?? roleOptions[p.seat]!
+                const selectedIndex = Math.max(0, roleOptions.indexOf(selectedRole))
+                return (
+                  <View key={p.openid} className='debug-role-row'>
+                    <Text className='debug-player-name'>{p.seat + 1}. {p.nickname}</Text>
+                    <Picker
+                      mode='selector'
+                      range={roleOptionLabels}
+                      value={selectedIndex}
+                      onChange={(e) => {
+                        const nextRole = roleOptions[Number(e.detail.value)]
+                        if (!nextRole) return
+                        setDebugRoles((prev) => ({ ...prev, [p.openid]: nextRole }))
+                      }}
+                    >
+                      <View className={'debug-role-picker ' + ROLE_META[selectedRole].team}>
+                        <Text>{ROLE_META[selectedRole].name}</Text>
+                      </View>
+                    </Picker>
+                  </View>
+                )
+              })}
+          </View>
+        )}
       </View>
 
       <View className='footer'>
         {isHost ? (
-          // 👉 按钮文案也同步更新，直接显示强制开始
-          <Button className='btn-main' disabled={!canStart} onClick={startGame}>
-            强制开始游戏 ({joined}/{total})
-          </Button>
+          <View className='host-actions'>
+            <Button className='btn-secondary' disabled={joined === total} onClick={debugFillBots}>
+              补齐测试玩家
+            </Button>
+            <Button className='btn-main' disabled={!canStart} onClick={startGame}>
+              开始游戏 ({joined}/{total})
+            </Button>
+          </View>
         ) : (
           <Button className={`btn-main ${me?.isReady ? 'cancel' : ''}`} onClick={toggleReady}>
             {me?.isReady ? '取消准备' : '准备就绪'}

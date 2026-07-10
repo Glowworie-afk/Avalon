@@ -14,6 +14,11 @@
 
 export type Team = 'good' | 'evil'
 
+export interface LancelotEvent {
+  round: number
+  switched: boolean
+}
+
 export type Role =
   | 'merlin' // 梅林（好）：能看到坏人（莫德雷德除外）
   | 'percival' // 派西维尔（好）：能看到梅林和莫甘娜，但分不清谁是谁
@@ -33,6 +38,7 @@ export type GamePhase =
   | 'team_building' // 队长组队
   | 'voting' // 投票
   | 'quest' // 任务执行
+  | 'lady' // 湖中仙女查验
   | 'assassin' // 刺客猜梅林
   | 'over' // 结束
 
@@ -63,13 +69,16 @@ export interface GameState {
   leaderSeat: number // 当前队长座位
   questResults: ('success' | 'fail')[] // 每轮任务结果
   proposedTeam: number[] // 队长提名的座位
-  rejectCount: number // 连续否决次数，到 5 坏人胜
+  rejectCount: number // 连续否决次数，到 2 后下一次组队强制发车
   // votes 只存服务端，揭晓前绝不进公开视图（防偷看先投者）
   votes: Record<string, 'approve' | 'reject'>
   // questActions 只存服务端，结算前绝不进公开视图
   questActions: Record<string, 'success' | 'fail'>
   ladyOfLakeHolder?: number // 湖中仙女令牌当前持有者座位
   ladyHistory: number[] // 持有过仙女的座位，用于「不能查已持有者」
+  lancelotDeck: ('stay' | 'switch')[] // 第 3/4/5 轮开始前依次抽取，完整态保密
+  lancelotDeckIndex: number
+  lancelotHistory: LancelotEvent[]
 }
 
 export interface Room {
@@ -103,6 +112,7 @@ export interface PublicGameState {
   rejectCount: number
   votedCount: number // 已投票人数（只报数量、不报谁投了什么，揭晓前保密）
   ladyOfLakeHolder?: number
+  ladyHistory?: number[]
 }
 
 export interface PublicRoom {
@@ -149,6 +159,7 @@ export function toPublicGameState(g: GameState): PublicGameState {
     proposedTeam: g.proposedTeam,
     rejectCount: g.rejectCount,
     votedCount: Object.keys(g.votes).length,
+    ladyHistory: g.ladyHistory,
     // 仅在有值时才带上可选字段（兼容 exactOptionalPropertyTypes）
     ...(g.ladyOfLakeHolder !== undefined ? { ladyOfLakeHolder: g.ladyOfLakeHolder } : {}),
   }

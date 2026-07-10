@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { View, Text, Button, Image } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { ensureLogin } from '../../utils/auth'
-import { getProfile } from '../../utils/profile'
+import { getProfile, saveProfile } from '../../utils/profile'
+import { request, setToken } from '../../utils/request'
 import './index.scss'
 
 // 角色展示数据源
@@ -13,6 +14,11 @@ const ROLES_SHOWCASE = [
   { id: 'morgana', name: '莫甘娜', team: 'evil', icon: '🔮', desc: '邪恶的女巫。你会伪装成梅林，迷惑派西维尔的视线。' },
   { id: 'mordred', name: '莫德雷德', team: 'evil', icon: '👑', desc: '坏人阵营大BOSS。你的身份对梅林隐形，是刺入好人内部的利刃。' },
 ]
+
+interface LoginResult {
+  token: string
+  openid: string
+}
 
 export default function Index() {
   const [busy, setBusy] = useState(false)
@@ -56,6 +62,34 @@ export default function Index() {
       })
     } catch (e: any) {
       Taro.showToast({ title: e?.message || '网络错误', icon: 'none' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const loginAsTestUser = async (id: number) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const result = await request<LoginResult>({
+        url: '/api/login',
+        method: 'POST',
+        data: { code: `user${id}` },
+        auth: false,
+      })
+      setToken(result.token)
+      const profile = await saveProfile({
+        nickname: `测试玩家${id}`,
+        avatarUrl: '',
+      })
+      setUser({
+        nickname: profile.nickname,
+        avatarUrl: profile.avatarUrl,
+        avatarText: profile.nickname.charAt(0),
+      })
+      Taro.showToast({ title: `已登录测试玩家${id}`, icon: 'none' })
+    } catch (e: any) {
+      Taro.showToast({ title: e?.message || '测试登录失败', icon: 'none' })
     } finally {
       setBusy(false)
     }
@@ -108,6 +142,21 @@ export default function Index() {
 
       {/* 3. 底部建房按钮 */}
       <View className='bottom-area'>
+        <View className='dev-login-panel'>
+          <Text className='dev-title'>本地联调用户</Text>
+          <View className='dev-user-grid'>
+            {[1, 2, 3, 4, 5].map((id) => (
+              <Button
+                key={id}
+                className='dev-user-btn'
+                disabled={busy}
+                onClick={() => loginAsTestUser(id)}
+              >
+                P{id}
+              </Button>
+            ))}
+          </View>
+        </View>
         <Button className='create-btn' loading={busy} onClick={onCreate}>
           创建房间
         </Button>

@@ -10,16 +10,18 @@ import {
     ROLE_META,
     teamSize,
     failsRequired,
-    MAX_REJECTS,
+    FORCE_QUEST_AFTER_REJECTS,
     TOTAL_ROUNDS,
+    type LancelotEvent,
     type Role,
     type RoleInfo,
     type Room,
   } from '@avalon/shared'
   
   /** 开局：建对局状态，首任队长定为座位 0。 */
-  export function initGame(room: Room): void {
+  export function initGame(room: Room, random: () => number = Math.random): void {
     room.status = 'playing'
+    const useLady = room.config.useLadyOfLake
     room.game = {
       phase: 'team_building',
       round: 1,
@@ -29,7 +31,11 @@ import {
       rejectCount: 0,
       votes: {},
       questActions: {},
-      ladyHistory: [],
+      ...(useLady ? { ladyOfLakeHolder: 0 } : {}),
+      ladyHistory: useLady ? [0] : [],
+      lancelotDeck: room.config.useLancelot ? shuffle(['switch', 'stay', 'stay'] as ('stay' | 'switch')[], random) : [],
+      lancelotDeckIndex: 0,
+      lancelotHistory: [],
     }
   }
   
@@ -121,6 +127,12 @@ import {
   
     g.proposedTeam = seats
     g.votes = {}
+    if (g.rejectCount >= FORCE_QUEST_AFTER_REJECTS) {
+      g.rejectCount = 0
+      g.questActions = {}
+      g.phase = 'quest'
+      return { ok: true }
+    }
     g.phase = 'voting'
     return { ok: true }
   }
@@ -167,20 +179,8 @@ import {
       return { ok: true, tally: { status: 'resolved', approved: true, votes } }
     }
   
-    // 否决：累加否决轨
+    // 否决：累加否决轨。达到 2 次后不会直接判坏人胜，下一次提案会强制发车。
     g.rejectCount += 1
-    if (g.rejectCount >= MAX_REJECTS) {
-      g.phase = 'over'
-      return {
-        ok: true,
-        tally: {
-          status: 'resolved',
-          approved: false,
-          votes,
-          gameOver: { winner: 'evil', reason: `连续 ${MAX_REJECTS} 次组队被否决，坏人获胜` },
-        },
-      }
-    }
   
     // 队长顺位轮转，回到组队
     g.leaderSeat = (g.leaderSeat + 1) % room.config.playerCount
@@ -199,6 +199,8 @@ import {
     requiredFails: number
     successCount: number
     failResultCount: number
+    needsLady?: boolean
+    lancelotEvent?: LancelotEvent
     gameOver?: { winner: 'good' | 'evil'; reason: string }
   }
   export type QuestTally = { status: 'pending' } | QuestResolved
@@ -235,7 +237,7 @@ import {
     const failResultCount = g.questResults.filter((r) => r === 'fail').length
     const base = { status: 'resolved' as const, round, result, failCount, requiredFails, successCount, failResultCount }
   
-    // 【核心改动 1】：好人3次成功后，不再直接胜利，而是强行切入刺杀阶段！
+    // 三次成功后先进入刺杀；三次失败直接结算。
     if (successCount >= 3) {
       g.phase = 'assassin' // 悬念开始
       return {
@@ -265,16 +267,96 @@ import {
       }
     }
   
+    if (shouldUseLadyAfterRound(room, round)) {
+      g.phase = 'lady'
+      return { ok: true, tally: { ...base, needsLady: true } }
+    }
+
+    const lancelotEvent = advanceToNextRound(room)
+    return { ok: true, tally: lancelotEvent ? { ...base, lancelotEvent } : base }
+  }
+
+  function shouldUseLadyAfterRound(room: Room, round: number): boolean {
+    return room.config.useLadyOfLake && round >= 2 && round <= 4
+  }
+
+  function advanceToNextRound(room: Room): LancelotEvent | null {
+    const g = room.game!
     g.round += 1
     g.leaderSeat = (g.leaderSeat + 1) % room.config.playerCount
     g.proposedTeam = []
     g.votes = {}
     g.questActions = {}
     g.phase = 'team_building'
-    return { ok: true, tally: base }
+    return applyLancelotCard(room)
+  }
+
+  function applyLancelotCard(room: Room): LancelotEvent | null {
+    const g = room.game!
+    if (!room.config.useLancelot || g.round < 3 || g.round > 5) return null
+    if (g.lancelotHistory.some((event) => event.round === g.round)) return null
+
+    const card = g.lancelotDeck[g.lancelotDeckIndex] ?? 'stay'
+    g.lancelotDeckIndex += 1
+    const switched = card === 'switch'
+    if (switched) {
+      for (const player of room.players) {
+        if (player.role === 'good_lancelot') player.team = player.team === 'good' ? 'evil' : 'good'
+        if (player.role === 'evil_lancelot') player.team = player.team === 'evil' ? 'good' : 'evil'
+      }
+    }
+
+    const event: LancelotEvent = { round: g.round, switched }
+    g.lancelotHistory.push(event)
+    return event
+  }
+
+  export interface LadyInspectResult {
+    holderSeat: number
+    targetOpenid: string
+    targetSeat: number
+    targetTeam: 'good' | 'evil'
+    nextHolderSeat: number
+    lancelotEvent?: LancelotEvent
+  }
+
+  export function inspectLadyOfLake(
+    room: Room,
+    openid: string,
+    targetOpenid: string,
+  ): EngineError | { ok: true; result: LadyInspectResult } {
+    const g = room.game
+    if (!g) return { ok: false, error: '游戏未开始' }
+    if (g.phase !== 'lady') return { ok: false, error: '当前不是湖中仙女阶段' }
+    if (!room.config.useLadyOfLake) return { ok: false, error: '本局未开启湖中仙女' }
+
+    const holder = room.players.find((p) => p.seat === g.ladyOfLakeHolder)
+    if (!holder || holder.openid !== openid) return { ok: false, error: '只有湖中仙女持有者可以查验' }
+
+    const target = room.players.find((p) => p.openid === targetOpenid)
+    if (!target || !target.team) return { ok: false, error: '查验目标不存在' }
+    if (target.seat === holder.seat) return { ok: false, error: '不能查验自己' }
+    if (g.ladyHistory.includes(target.seat)) return { ok: false, error: '不能查验曾经持有过湖中仙女的玩家' }
+
+    const resultBase = {
+      holderSeat: holder.seat,
+      targetOpenid: target.openid,
+      targetSeat: target.seat,
+      targetTeam: target.team,
+      nextHolderSeat: target.seat,
+    }
+
+    g.ladyOfLakeHolder = target.seat
+    g.ladyHistory.push(target.seat)
+    const lancelotEvent = advanceToNextRound(room)
+
+    return {
+      ok: true,
+      result: lancelotEvent ? { ...resultBase, lancelotEvent } : resultBase,
+    }
   }
   
-  /** * 【核心改动 2】：刺客执行刺杀，终局结算
+  /** 刺客执行刺杀，终局结算
    */
   export function executeAssassination(
     room: Room,

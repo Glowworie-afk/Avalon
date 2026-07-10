@@ -9,22 +9,39 @@ import {
   canUseLancelot,
   MIN_PLAYERS,
   MAX_PLAYERS,
+  ROLE_META,
+  buildRoleList,
+  teamSize,
   type Message,
   type JoinRoomPayload,
   type CreateRoomPayload,
   type UpdateConfigPayload,
+  type DebugSetRolesPayload,
   type ProposeTeamPayload,
   type VotePayload,
   type QuestActionPayload,
+  type LadyInspectPayload,
+  type AssassinatePayload,
   type Room,
   type Player,
   type GameConfig,
+  type Role,
   type RoleInfo,
 } from '@avalon/shared';
+import { config } from '../config';
 import { getRoom, saveRoom, deleteRoom, roomExists } from '../store/roomStore';
 import { getUser } from '../store/userStore';
 import { generateUniqueCode } from '../lib/roomCode';
-import { initGame, dealRoles, buildRoleInfo, proposeTeam, castVote, submitQuestAction } from '../game/engine';
+import {
+  initGame,
+  dealRoles,
+  buildRoleInfo,
+  proposeTeam,
+  castVote,
+  submitQuestAction,
+  inspectLadyOfLake,
+  executeAssassination,
+} from '../game/engine';
 
 /**
  * WebSocket 房间逻辑（Day 2）。
@@ -38,6 +55,8 @@ interface GameSocket extends WebSocket {
   openid?: string;
   roomId?: string | null;
 }
+
+const DEBUG_BOT_PREFIX = 'debug-bot-';
 
 const DEFAULT_CONFIG: GameConfig = {
   playerCount: MIN_PLAYERS,
@@ -128,6 +147,12 @@ async function handleMessage(wss: WebSocketServer, socket: GameSocket, msg: Mess
     case ClientEvent.START_GAME:
       return startGame(wss, socket);
 
+    case ClientEvent.DEBUG_FILL_BOTS:
+      return debugFillBots(wss, socket);
+
+    case ClientEvent.DEBUG_SET_ROLES:
+      return debugSetRoles(wss, socket, msg.payload as DebugSetRolesPayload);
+
     case ClientEvent.PROPOSE_TEAM:
       return handlePropose(wss, socket, msg.payload as ProposeTeamPayload);
 
@@ -136,6 +161,12 @@ async function handleMessage(wss: WebSocketServer, socket: GameSocket, msg: Mess
 
     case ClientEvent.QUEST_ACTION:
       return handleQuestAction(wss, socket, msg.payload as QuestActionPayload);
+
+    case ClientEvent.LADY_INSPECT:
+      return handleLadyInspect(wss, socket, msg.payload as LadyInspectPayload);
+
+    case ClientEvent.ASSASSINATE:
+      return handleAssassinate(wss, socket, msg.payload as AssassinatePayload);
 
     default:
       send(socket, makeMessage(ServerEvent.ERROR, { message: `unhandled type: ${msg.type}` }));
@@ -211,10 +242,7 @@ async function leaveRoom(wss: WebSocketServer, socket: GameSocket): Promise<void
       await saveRoom(room);
   
       // 3. 全服广播：某人逃跑，游戏解散（按照惯例，好人逃跑判坏人赢，这里统一用 evil 代替）
-      broadcast(wss, room.roomId, makeMessage(ServerEvent.GAME_OVER, {
-        winner: 'evil',
-        reason: `玩家 [${me?.nickname || '未知'}] 中途逃跑，游戏强制解散！`
-      }));
+      broadcastGameOver(wss, room, 'evil', `玩家 [${me?.nickname || '未知'}] 中途逃跑，游戏强制解散！`);
       
       // 4. 更新房间状态，让剩下的人看到他头像灰掉，且阶段变为结束
       broadcastRoom(wss, room);
@@ -259,6 +287,74 @@ async function toggleReady(wss: WebSocketServer, socket: GameSocket): Promise<vo
   broadcastRoom(wss, room);
 }
 
+async function debugFillBots(wss: WebSocketServer, socket: GameSocket): Promise<void> {
+  if (!config.mockLogin) return err(socket, '测试玩家只能在 MOCK_LOGIN=true 时使用');
+
+  const room = await currentRoom(socket);
+  if (!room) return err(socket, '你不在任何房间');
+  if (room.hostOpenid !== socket.openid) return err(socket, '只有房主可以补齐测试玩家');
+  if (room.status !== 'waiting') return err(socket, '游戏已经开始');
+
+  while (room.players.length < room.config.playerCount) {
+    const seat = room.players.length;
+    room.players.push({
+      openid: 'debug-bot-' + room.roomId + '-' + seat,
+      nickname: '测试骑士' + (seat + 1),
+      avatarUrl: '',
+      seat,
+      isHost: false,
+      isReady: true,
+      connected: true,
+    });
+  }
+
+  await saveRoom(room);
+  broadcastRoom(wss, room);
+}
+
+function sameRoleMultiset(a: Role[], b: Role[]): boolean {
+  if (a.length !== b.length) return false;
+  const key = (roles: Role[]) => [...roles].sort().join('|');
+  return key(a) === key(b);
+}
+
+function currentAssignedRoles(room: Room): Role[] | null {
+  const roles = room.players.map((p) => p.role);
+  return roles.every(Boolean) ? (roles as Role[]) : null;
+}
+
+async function debugSetRoles(wss: WebSocketServer, socket: GameSocket, payload: DebugSetRolesPayload): Promise<void> {
+  if (!config.mockLogin) return err(socket, '测试身份只能在 MOCK_LOGIN=true 时使用');
+
+  const room = await currentRoom(socket);
+  if (!room) return err(socket, '你不在任何房间');
+  if (room.hostOpenid !== socket.openid) return err(socket, '只有房主可以指定测试身份');
+  if (room.status !== 'waiting') return err(socket, '游戏已经开始');
+  if (room.players.length !== room.config.playerCount) {
+    return err(socket, `需要先补齐到 ${room.config.playerCount} 人`);
+  }
+
+  const assignments = Array.isArray(payload?.assignments) ? payload.assignments : [];
+  const byOpenid = new Map(assignments.map((item) => [item.openid, item.role]));
+  const roles = room.players.map((p) => byOpenid.get(p.openid));
+  if (!roles.every(Boolean)) return err(socket, '测试身份配置不完整');
+
+  const assignedRoles = roles as Role[];
+  const expectedRoles = buildRoleList(room.config.playerCount, room.config);
+  if (!sameRoleMultiset(assignedRoles, expectedRoles)) {
+    return err(socket, '测试身份必须和当前人数/扩展的角色池一致');
+  }
+
+  room.players.forEach((player, index) => {
+    const role = assignedRoles[index]!;
+    player.role = role;
+    player.team = ROLE_META[role].team;
+  });
+
+  await saveRoom(room);
+  broadcastRoom(wss, room);
+}
+
 async function startGame(wss: WebSocketServer, socket: GameSocket): Promise<void> {
   const room = await currentRoom(socket);
   if (!room) return err(socket, '你不在任何房间');
@@ -269,7 +365,10 @@ async function startGame(wss: WebSocketServer, socket: GameSocket): Promise<void
   }
   if (room.players.some((p) => !p.isReady)) return err(socket, '还有玩家未准备');
 
-  const deal = dealRoles(room);
+  const assignedRoles = config.mockLogin ? currentAssignedRoles(room) : null;
+  const deal = assignedRoles
+    ? { ok: true as const, deal: { roleInfoByOpenid: Object.fromEntries(room.players.map((p) => [p.openid, buildRoleInfo(room, p.openid)])) } }
+    : dealRoles(room);
   if (!deal.ok) return err(socket, deal.error);
   initGame(room);
   await saveRoom(room);
@@ -282,6 +381,188 @@ async function startGame(wss: WebSocketServer, socket: GameSocket): Promise<void
     leaderSeat: g.leaderSeat,
   }));
   broadcastRoom(wss, room);
+  await runDebugBots(wss, room);
+}
+
+function isDebugBot(player: Player): boolean {
+  return player.openid.startsWith(DEBUG_BOT_PREFIX);
+}
+
+function selectDebugTeam(room: Room): number[] {
+  const g = room.game!;
+  const need = teamSize(room.config.playerCount, g.round);
+  const leaderSeat = g.leaderSeat;
+  return [
+    leaderSeat,
+    ...room.players
+      .map((p) => p.seat)
+      .filter((seat) => seat !== leaderSeat)
+      .sort((a, b) => a - b),
+  ].slice(0, need);
+}
+
+function makeGameOverPayload(room: Room, winner: 'good' | 'evil', reason: string) {
+  return {
+    winner,
+    reason,
+    revealedRoles: room.players
+      .filter((p) => p.role && p.team)
+      .map((p) => ({
+        openid: p.openid,
+        nickname: p.nickname,
+        seat: p.seat,
+        role: p.role!,
+        team: p.team!,
+      }))
+      .sort((a, b) => a.seat - b.seat),
+  };
+}
+
+function broadcastGameOver(wss: WebSocketServer, room: Room, winner: 'good' | 'evil', reason: string): void {
+  broadcast(wss, room.roomId, makeMessage(ServerEvent.GAME_OVER, makeGameOverPayload(room, winner, reason)));
+}
+
+function broadcastVoteResult(wss: WebSocketServer, room: Room, tally: Extract<ReturnType<typeof castVote>, { ok: true }>['tally']): void {
+  if (tally.status !== 'resolved') return;
+  const g = room.game!;
+  broadcast(wss, room.roomId, makeMessage(ServerEvent.VOTE_RESULT, {
+    approved: tally.approved,
+    votes: tally.votes,
+    round: g.round,
+    leaderSeat: g.leaderSeat,
+    rejectCount: g.rejectCount,
+  }));
+  if (tally.gameOver) {
+    broadcastGameOver(wss, room, tally.gameOver.winner, tally.gameOver.reason);
+  }
+}
+
+function broadcastQuestResult(wss: WebSocketServer, room: Room, tally: Extract<ReturnType<typeof submitQuestAction>, { ok: true }>['tally']): void {
+  if (tally.status !== 'resolved') return;
+  broadcast(wss, room.roomId, makeMessage(ServerEvent.QUEST_RESULT, {
+    round: tally.round,
+    result: tally.result,
+    failCount: tally.failCount,
+    requiredFails: tally.requiredFails,
+    successCount: tally.successCount,
+    failResultCount: tally.failResultCount,
+  }));
+  if (tally.gameOver) {
+    broadcastGameOver(wss, room, tally.gameOver.winner, tally.gameOver.reason);
+  }
+}
+
+function refreshRoleInfo(wss: WebSocketServer, room: Room): void {
+  sendRoleInfo(wss, room.roomId, Object.fromEntries(room.players.map((p) => [p.openid, buildRoleInfo(room, p.openid)])));
+}
+
+async function runDebugBots(wss: WebSocketServer, room: Room): Promise<void> {
+  if (!config.mockLogin || room.status !== 'playing' || !room.game) return;
+
+  for (let guard = 0; guard < 20; guard += 1) {
+    const g = room.game;
+    if (!g || room.status !== 'playing') return;
+
+    if (g.phase === 'team_building') {
+      const leader = room.players.find((p) => p.seat === g.leaderSeat);
+      if (!leader || !isDebugBot(leader)) return;
+
+      const res = proposeTeam(room, leader.openid, selectDebugTeam(room));
+      if (!res.ok) {
+        console.warn('[debug-bot] propose failed:', res.error);
+        return;
+      }
+      await saveRoom(room);
+      broadcastRoom(wss, room);
+      broadcast(wss, room.roomId, makeMessage(ServerEvent.PHASE_CHANGE, {
+        phase: g.phase,
+        round: g.round,
+        leaderSeat: g.leaderSeat,
+        proposedTeam: g.proposedTeam,
+        rejectCount: g.rejectCount,
+      }));
+      continue;
+    }
+
+    if (g.phase === 'voting') {
+      let acted = false;
+      let resolved: Extract<ReturnType<typeof castVote>, { ok: true }>['tally'] | null = null;
+      for (const bot of room.players.filter(isDebugBot)) {
+        if (g.votes[bot.openid] !== undefined) continue;
+        const res = castVote(room, bot.openid, bot.team === 'good');
+        if (!res.ok) {
+          console.warn('[debug-bot] vote failed:', res.error);
+          continue;
+        }
+        acted = true;
+        resolved = res.tally;
+        if (res.tally.status === 'resolved') break;
+      }
+      if (!acted) return;
+      await saveRoom(room);
+      if (resolved?.status === 'resolved') {
+        broadcastVoteResult(wss, room, resolved);
+        broadcastRoom(wss, room);
+        if (resolved.gameOver) return;
+        continue;
+      }
+      broadcastRoom(wss, room);
+      return;
+    }
+
+    if (g.phase === 'quest') {
+      let acted = false;
+      let resolved: Extract<ReturnType<typeof submitQuestAction>, { ok: true }>['tally'] | null = null;
+      for (const bot of room.players.filter((p) => isDebugBot(p) && g.proposedTeam.includes(p.seat))) {
+        if (g.questActions[bot.openid] !== undefined) continue;
+        const res = submitQuestAction(room, bot.openid, bot.team === 'evil');
+        if (!res.ok) {
+          console.warn('[debug-bot] quest failed:', res.error);
+          continue;
+        }
+        acted = true;
+        resolved = res.tally;
+        if (res.tally.status === 'resolved') break;
+      }
+      if (!acted) return;
+      await saveRoom(room);
+      if (resolved?.status === 'resolved') {
+        if (resolved.lancelotEvent) refreshRoleInfo(wss, room);
+        broadcastQuestResult(wss, room, resolved);
+        broadcastRoom(wss, room);
+        if (resolved.gameOver) return;
+        continue;
+      }
+      return;
+    }
+
+    if (g.phase === 'lady') {
+      const holder = room.players.find((p) => p.seat === g.ladyOfLakeHolder);
+      if (!holder || !isDebugBot(holder)) return;
+      const target = room.players.find((p) => p.seat !== holder.seat && !g.ladyHistory.includes(p.seat));
+      if (!target) return;
+      const res = inspectLadyOfLake(room, holder.openid, target.openid);
+      if (!res.ok) return;
+      await saveRoom(room);
+      if (res.result.lancelotEvent) refreshRoleInfo(wss, room);
+      broadcastRoom(wss, room);
+      continue;
+    }
+
+    if (g.phase === 'assassin') {
+      const assassin = room.players.find((p) => isDebugBot(p) && p.role === 'assassin');
+      const merlin = room.players.find((p) => p.role === 'merlin');
+      if (!assassin || !merlin) return;
+      const res = executeAssassination(room, assassin.openid, merlin.openid);
+      if (!res.ok) return;
+      await saveRoom(room);
+      broadcastGameOver(wss, room, res.gameOver.winner, res.gameOver.reason);
+      broadcastRoom(wss, room);
+      return;
+    }
+
+    return;
+  }
 }
 
 async function handlePropose(
@@ -305,6 +586,7 @@ async function handlePropose(
     proposedTeam: g.proposedTeam,
     rejectCount: g.rejectCount,
   }));
+  await runDebugBots(wss, room);
 }
 
 async function handleVote(
@@ -321,6 +603,7 @@ async function handleVote(
   if (res.tally.status === 'pending') {
     // 只更新「已投票人数」，不泄露谁投了什么
     broadcastRoom(wss, room);
+    await runDebugBots(wss, room);
     return;
   }
 
@@ -336,11 +619,10 @@ async function handleVote(
   broadcastRoom(wss, room);
 
   if (res.tally.gameOver) {
-    broadcast(wss, room.roomId, makeMessage(ServerEvent.GAME_OVER, {
-      winner: res.tally.gameOver.winner,
-      reason: res.tally.gameOver.reason,
-    }));
+    broadcastGameOver(wss, room, res.tally.gameOver.winner, res.tally.gameOver.reason);
+    return;
   }
+  await runDebugBots(wss, room);
 }
 
 async function handleQuestAction(
@@ -355,9 +637,11 @@ async function handleQuestAction(
   await saveRoom(room);
 
   if (res.tally.status === 'pending') {
+    await runDebugBots(wss, room);
     return;
   }
 
+  if (res.tally.lancelotEvent) refreshRoleInfo(wss, room);
   broadcast(wss, room.roomId, makeMessage(ServerEvent.QUEST_RESULT, {
     round: res.tally.round,
     result: res.tally.result,
@@ -369,11 +653,52 @@ async function handleQuestAction(
   broadcastRoom(wss, room);
 
   if (res.tally.gameOver) {
-    broadcast(wss, room.roomId, makeMessage(ServerEvent.GAME_OVER, {
-      winner: res.tally.gameOver.winner,
-      reason: res.tally.gameOver.reason,
-    }));
+    broadcastGameOver(wss, room, res.tally.gameOver.winner, res.tally.gameOver.reason);
+    return;
   }
+  await runDebugBots(wss, room);
+}
+
+async function handleLadyInspect(
+  wss: WebSocketServer,
+  socket: GameSocket,
+  payload: LadyInspectPayload,
+): Promise<void> {
+  const room = await currentRoom(socket);
+  if (!room) return err(socket, '你不在任何房间');
+  const targetOpenid = typeof payload?.targetOpenid === 'string' ? payload.targetOpenid : '';
+  const res = inspectLadyOfLake(room, socket.openid!, targetOpenid);
+  if (!res.ok) return err(socket, res.error);
+  await saveRoom(room);
+
+  const target = room.players.find((p) => p.openid === res.result.targetOpenid);
+  send(socket, makeMessage(ServerEvent.LADY_RESULT, {
+    holderSeat: res.result.holderSeat,
+    targetOpenid: res.result.targetOpenid,
+    targetNickname: target?.nickname ?? '未知玩家',
+    targetSeat: res.result.targetSeat,
+    targetTeam: res.result.targetTeam,
+    nextHolderSeat: res.result.nextHolderSeat,
+  }));
+  if (res.result.lancelotEvent) refreshRoleInfo(wss, room);
+  broadcastRoom(wss, room);
+  await runDebugBots(wss, room);
+}
+
+async function handleAssassinate(
+  wss: WebSocketServer,
+  socket: GameSocket,
+  payload: AssassinatePayload,
+): Promise<void> {
+  const room = await currentRoom(socket);
+  if (!room) return err(socket, '你不在任何房间');
+  const targetOpenid = typeof payload?.targetOpenid === 'string' ? payload.targetOpenid : '';
+  const res = executeAssassination(room, socket.openid!, targetOpenid);
+  if (!res.ok) return err(socket, res.error);
+  await saveRoom(room);
+
+  broadcastGameOver(wss, room, res.gameOver.winner, res.gameOver.reason);
+  broadcastRoom(wss, room);
 }
 
 async function handleDisconnect(wss: WebSocketServer, socket: GameSocket): Promise<void> {

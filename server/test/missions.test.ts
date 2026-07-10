@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { teamSize, failsRequired, MISSION_TEAM_SIZE, TOTAL_ROUNDS, MAX_REJECTS } from '@avalon/shared';
+import { teamSize, failsRequired, MISSION_TEAM_SIZE, TOTAL_ROUNDS, FORCE_QUEST_AFTER_REJECTS } from '@avalon/shared';
 
 test('每轮人数表与官方一致', () => {
   assert.deepEqual(MISSION_TEAM_SIZE[5], [2, 3, 2, 3, 3]);
@@ -30,5 +30,5 @@ test('failsRequired：7 人及以上第 4 轮需 2 张，其余 1 张', () => {
 
 test('常量', () => {
   assert.equal(TOTAL_ROUNDS, 5);
-  assert.equal(MAX_REJECTS, 5);
+  assert.equal(FORCE_QUEST_AFTER_REJECTS, 2);
 });

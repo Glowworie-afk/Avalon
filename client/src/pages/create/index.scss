@@ -7,7 +7,7 @@
   
     // 自定义顶部导航栏 (适配刘海屏)
     .nav-bar {
-      padding-top: calc(env(safe-area-inset-top) + 20px);
+      padding-top: calc(env(safe-area-inset-top) + 118rpx);
       padding-bottom: 20px;
       display: flex;
       align-items: center;
@@ -43,7 +43,7 @@
   
     .content {
       flex: 1;
-      padding: 40px 32px;
+      padding: calc(env(safe-area-inset-top) + 154rpx) 32px 40px;
       display: flex;
       flex-direction: column;
       overflow-y: auto;
@@ -191,7 +191,7 @@
   
     // 底部按钮区
     .bottom-area {
-      padding: 32px 48px 80px;
+      padding: 32px 48px calc(env(safe-area-inset-bottom) + 80rpx);
   
       .create-btn {
         width: 100%;

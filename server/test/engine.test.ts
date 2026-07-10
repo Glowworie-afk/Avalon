@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initGame, dealRoles, proposeTeam, castVote, submitQuestAction } from '../game/engine';
+import { initGame, dealRoles, proposeTeam, castVote, submitQuestAction, inspectLadyOfLake, executeAssassination } from '../game/engine';
 import { teamSize, toPublicRoom, type Room, type Player } from '@avalon/shared';
 
 function makeRoom(count: number): Room {
@@ -208,9 +208,14 @@ test('任务执行：7 人第 4 轮需要两张失败牌才失败', () => {
   assert.equal(last.tally.failCount, 1);
 });
 
-test('完整五轮任务轨道：成功/失败交错直到第五轮好人获胜', () => {
+test('完整任务轨道：三次成功后进入刺杀，刺杀失败后好人获胜', () => {
   const room = makeRoom(5);
   room.players.forEach((p, i) => { p.team = i === 0 ? 'evil' : 'good'; });
+  room.players[0]!.role = 'assassin';
+  room.players[1]!.role = 'merlin';
+  room.players[2]!.role = 'loyal';
+  room.players[3]!.role = 'loyal';
+  room.players[4]!.role = 'loyal';
   initGame(room);
   const failRounds = new Set([2, 4]);
 
@@ -228,8 +233,72 @@ test('完整五轮任务轨道：成功/失败交错直到第五轮好人获胜'
   }
 
   assert.deepEqual(room.game!.questResults, ['success', 'fail', 'success', 'fail', 'success']);
+  assert.equal(room.game!.phase, 'assassin');
+  assert.equal(room.status, 'playing');
+
+  const gameOver = executeAssassination(room, 'p0', 'p2');
+  assert.equal(gameOver.ok, true);
+  if (!gameOver.ok) throw new Error('unreachable');
+  assert.deepEqual(gameOver.gameOver, {
+    winner: 'good',
+    reason: '刺杀失败！刺客错误地刺杀了【忠臣】，好人阵营最终获胜！',
+  });
   assert.equal(room.game!.phase, 'over');
   assert.equal(room.status, 'finished');
+});
+
+
+
+test('兰斯洛特：第 3 轮开始前抽到切换牌会互换当前阵营', () => {
+  const room = makeRoom(7);
+  room.config.useLancelot = true;
+  room.players.forEach((p, i) => { p.team = i < 4 ? 'good' : 'evil'; });
+  room.players[0]!.role = 'good_lancelot';
+  room.players[4]!.role = 'evil_lancelot';
+  initGame(room, () => 0.999999);
+  room.game!.round = 2;
+  proposeTeam(room, 'p0', [0, 1, 2]);
+  for (const p of room.players) castVote(room, p.openid, true);
+  submitQuestAction(room, 'p0', false);
+  submitQuestAction(room, 'p1', false);
+  const last = submitQuestAction(room, 'p2', false);
+
+  assert.equal(last.ok, true);
+  if (!last.ok || last.tally.status !== 'resolved') throw new Error('unreachable');
+  assert.deepEqual(last.tally.lancelotEvent, { round: 3, switched: true });
+  assert.equal(room.players[0]!.team, 'evil');
+  assert.equal(room.players[4]!.team, 'good');
+  assert.equal(room.game!.round, 3);
+});
+
+test('湖中仙女：第 2 轮后进入查验，查验后传递令牌并进入下一轮', () => {
+  const room = makeRoom(5);
+  room.config.useLadyOfLake = true;
+  room.players.forEach((p, i) => { p.team = i < 3 ? 'good' : 'evil'; });
+  initGame(room);
+  assert.equal(room.game!.ladyOfLakeHolder, 0);
+  assert.deepEqual(room.game!.ladyHistory, [0]);
+
+  room.game!.round = 2;
+  proposeTeam(room, 'p0', [0, 1, 2]);
+  for (const p of room.players) castVote(room, p.openid, true);
+  submitQuestAction(room, 'p0', false);
+  submitQuestAction(room, 'p1', false);
+  const last = submitQuestAction(room, 'p2', false);
+  assert.equal(last.ok, true);
+  if (!last.ok || last.tally.status !== 'resolved') throw new Error('unreachable');
+  assert.equal(last.tally.needsLady, true);
+  assert.equal(room.game!.phase, 'lady');
+  assert.equal(room.game!.round, 2);
+
+  const inspected = inspectLadyOfLake(room, 'p0', 'p3');
+  assert.equal(inspected.ok, true);
+  if (!inspected.ok) throw new Error('unreachable');
+  assert.equal(inspected.result.targetTeam, 'evil');
+  assert.equal(room.game!.ladyOfLakeHolder, 3);
+  assert.deepEqual(room.game!.ladyHistory, [0, 3]);
+  assert.equal(room.game!.round, 3);
+  assert.equal(room.game!.phase, 'team_building');
 });
 
 test('平票算否决：6 人 3:3 → 否决，队长轮转，回到组队', () => {
@@ -256,23 +325,23 @@ test('不能重复投票', () => {
   assert.deepEqual(castVote(room, 'p1', false), { ok: false, error: '你已经投过票了' });
 });
 
-test('连续 5 次否决 → 坏人获胜，游戏结束', () => {
+test('连续两次否决后，第三次组队提案强制进入任务阶段', () => {
   const room = makeRoom(5);
   initGame(room);
-  let last: ReturnType<typeof castVote> | undefined;
-  for (let i = 0; i < 5; i++) {
+
+  for (let i = 0; i < 2; i++) {
     const proposal = proposeTeam(room, leaderOpenid(room), [0, 1]);
     assert.equal(proposal.ok, true);
-    for (const p of room.players) last = castVote(room, p.openid, false); // 全员反对
+    let last: ReturnType<typeof castVote> | undefined;
+    for (const p of room.players) last = castVote(room, p.openid, false);
+    assert.ok(last?.ok);
+    assert.equal(room.game!.phase, 'team_building');
+    assert.equal(room.game!.rejectCount, i + 1);
   }
-  assert.ok(last);
-  assert.ok(last.ok);
-  if (!last.ok) throw new Error('unreachable');
-  assert.equal(last.tally.status, 'resolved');
-  if (last.tally.status !== 'resolved') throw new Error('unreachable');
-  assert.equal(last.tally.approved, false);
-  assert.ok(last.tally.gameOver);
-  assert.equal(last.tally.gameOver.winner, 'evil');
-  assert.equal(room.game!.phase, 'over');
-  assert.equal(room.game!.rejectCount, 5);
+
+  const forced = proposeTeam(room, leaderOpenid(room), [0, 1]);
+  assert.deepEqual(forced, { ok: true });
+  assert.equal(room.game!.phase, 'quest');
+  assert.equal(room.game!.rejectCount, 0);
+  assert.deepEqual(room.game!.proposedTeam, [0, 1]);
 });

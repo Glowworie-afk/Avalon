@@ -155,6 +155,47 @@
       padding: 40px 48px 80px;
       position: relative;
       z-index: 20;
+
+      .dev-login-panel {
+        margin-bottom: 24px;
+        padding: 20px;
+        border-radius: 24px;
+        background: rgba(15, 23, 42, 0.78);
+        border: 2px solid rgba(148, 163, 184, 0.18);
+
+        .dev-title {
+          display: block;
+          margin-bottom: 16px;
+          color: #94a3b8;
+          font-size: 22px;
+          font-weight: 700;
+          text-align: center;
+        }
+
+        .dev-user-grid {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 12px;
+        }
+
+        .dev-user-btn {
+          height: 64px;
+          line-height: 64px;
+          padding: 0;
+          border-radius: 18px;
+          background: #1e293b;
+          color: #e2e8f0;
+          font-size: 24px;
+          font-weight: 800;
+          border: 1px solid rgba(148, 163, 184, 0.22);
+
+          &::after { display: none; }
+
+          &:active {
+            transform: scale(0.96);
+          }
+        }
+      }
   
       .create-btn {
         width: 100%;

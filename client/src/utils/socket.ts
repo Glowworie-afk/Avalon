@@ -12,7 +12,7 @@ import { makeMessage, type Message, type EventType } from '@avalon/shared'
  */
 
 // 与后端保持一致：本地 ws://localhost:3000，上线换成 wss://你的域名
-const WS_BASE = 'ws://localhost:3000'
+const WS_BASE = 'ws://118.139.9.191:3000'
 
 type Listener = (msg: Message) => void
 
@@ -34,6 +34,7 @@ export function connectSocket(): Promise<Taro.SocketTask> {
 
         socketTask.onOpen(() => {
           console.log('[ws] 已连接')
+          resolve(socketTask)
         })
 
         socketTask.onMessage((res) => {
@@ -55,9 +56,8 @@ export function connectSocket(): Promise<Taro.SocketTask> {
 
         socketTask.onError((err) => {
           console.error('[ws] 出错:', err)
+          reject(err)
         })
-
-        resolve(socketTask)
       })
       .catch(reject)
   })

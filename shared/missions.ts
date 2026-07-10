@@ -1,12 +1,12 @@
 /**
- * 任务（Quest）相关配置：每轮组队人数表、失败牌数、否决轨上限。
+ * 任务（Quest）相关配置：每轮组队人数表、失败牌数、强制发车阈值。
  * 和角色表一样作为前后端单一数据源：UI 展示人数表用它，服务端校验组队人数也用它。
  */
 
 export const TOTAL_ROUNDS = 5
 
-/** 连续否决达到这个次数，坏人直接获胜 */
-export const MAX_REJECTS = 5
+/** 连续否决达到这个次数后，下一次组队提案强制发车 */
+export const FORCE_QUEST_AFTER_REJECTS = 2
 
 /**
  * 每轮组队人数（阿瓦隆官方表）。
