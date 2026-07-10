@@ -608,20 +608,10 @@ async function handleVote(
   }
 
   // 全部投完，揭晓
-  const g = room.game!;
-  broadcast(wss, room.roomId, makeMessage(ServerEvent.VOTE_RESULT, {
-    approved: res.tally.approved,
-    votes: res.tally.votes,
-    round: g.round,
-    leaderSeat: g.leaderSeat,
-    rejectCount: g.rejectCount,
-  }));
+  broadcastVoteResult(wss, room, res.tally);
   broadcastRoom(wss, room);
 
-  if (res.tally.gameOver) {
-    broadcastGameOver(wss, room, res.tally.gameOver.winner, res.tally.gameOver.reason);
-    return;
-  }
+  if (res.tally.gameOver) return;
   await runDebugBots(wss, room);
 }
 
@@ -642,20 +632,10 @@ async function handleQuestAction(
   }
 
   if (res.tally.lancelotEvent) refreshRoleInfo(wss, room);
-  broadcast(wss, room.roomId, makeMessage(ServerEvent.QUEST_RESULT, {
-    round: res.tally.round,
-    result: res.tally.result,
-    failCount: res.tally.failCount,
-    requiredFails: res.tally.requiredFails,
-    successCount: res.tally.successCount,
-    failResultCount: res.tally.failResultCount,
-  }));
+  broadcastQuestResult(wss, room, res.tally);
   broadcastRoom(wss, room);
 
-  if (res.tally.gameOver) {
-    broadcastGameOver(wss, room, res.tally.gameOver.winner, res.tally.gameOver.reason);
-    return;
-  }
+  if (res.tally.gameOver) return;
   await runDebugBots(wss, room);
 }
 

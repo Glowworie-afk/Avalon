@@ -13,7 +13,6 @@ import {
   type PublicRoom,
   type QuestResultPayload,
   type RoleInfo,
-  type VoteResultPayload,
 } from '@avalon/shared'
 import './index.scss'
 
@@ -21,7 +20,6 @@ interface GameBoardProps {
   room: PublicRoom
   myOpenid: string
   roleInfo: RoleInfo | null
-  voteResult?: VoteResultPayload | null
   questResult?: QuestResultPayload | null
   gameOver?: GameOverPayload | null
   ladyResult?: LadyResultPayload | null

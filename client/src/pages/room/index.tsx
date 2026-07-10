@@ -15,7 +15,6 @@ import {
   type GameConfig,
   type RoomUpdatePayload,
   type ErrorPayload,
-  type VoteResultPayload,
   type QuestResultPayload,
   type GameOverPayload,
   type LadyResultPayload,
@@ -33,7 +32,6 @@ export default function Room() {
   const [room, setRoom] = useState<PublicRoom | null>(null)
   const [myOpenid, setMyOpenid] = useState('')
   const [roleInfo, setRoleInfo] = useState<RoleInfo | null>(null)
-  const [voteResult, setVoteResult] = useState<VoteResultPayload | null>(null)
   const [questResult, setQuestResult] = useState<QuestResultPayload | null>(null)
   const [gameOver, setGameOver] = useState<GameOverPayload | null>(null)
   const [ladyResult, setLadyResult] = useState<LadyResultPayload | null>(null)
@@ -75,8 +73,6 @@ export default function Room() {
             Taro.showToast({ title: '游戏开始', icon: 'none' })
           } else if (msg.type === ServerEvent.ROLE_INFO) {
             setRoleInfo((msg.payload as RoleInfoPayload).info)
-          } else if (msg.type === ServerEvent.VOTE_RESULT) {
-            setVoteResult(msg.payload as VoteResultPayload)
           } else if (msg.type === ServerEvent.QUEST_RESULT) {
             setQuestResult(msg.payload as QuestResultPayload)
           } else if (msg.type === ServerEvent.GAME_OVER) {
@@ -174,7 +170,6 @@ export default function Room() {
         room={room}
         myOpenid={myOpenid}
         roleInfo={roleInfo}
-        voteResult={voteResult}
         questResult={questResult}
         gameOver={gameOver}
         ladyResult={ladyResult}
