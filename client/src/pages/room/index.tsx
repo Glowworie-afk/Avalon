@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, Text, Button, Image, Picker } from '@tarojs/components'
+import { View, Text, Button, Image } from '@tarojs/components'
 import Taro, { useRouter, useShareAppMessage } from '@tarojs/taro'
 import { ensureSocket, sendMessage, onMessage } from '../../utils/socket'
 import { ensureLogin, whoAmI } from '../../utils/auth'
 import { getProfile } from '../../utils/profile'
 import RoleDeal from '../../components/RoleDeal'
 import GameBoard from '../../components/GameBoard'
+import DebugControls from '../../components/DebugControls'
 import {
   ClientEvent,
   ServerEvent,
   buildRoleList,
-  ROLE_META,
   type PublicRoom,
   type GameConfig,
   type RoomUpdatePayload,
@@ -125,7 +125,6 @@ export default function Room() {
   const joined = room?.players.length ?? 0
 
   const roleOptions = room ? buildRoleList(room.config.playerCount, room.config) : []
-  const roleOptionLabels = roleOptions.map((role) => ROLE_META[role].name)
   const showDebugRolePicker = isHost && joined === total && roleOptions.length === joined && room?.status === 'waiting'
 
   const toggleReady = () => sendMessage(ClientEvent.TOGGLE_READY, {})
@@ -220,35 +219,14 @@ export default function Room() {
           ))}
         </View>
         {showDebugRolePicker && (
-          <View className='debug-role-panel'>
-            <Text className='debug-role-title'>测试角色配置</Text>
-            {room.players
-              .slice()
-              .sort((a, b) => a.seat - b.seat)
-              .map((p) => {
-                const selectedRole = debugRoles[p.openid] ?? roleOptions[p.seat]!
-                const selectedIndex = Math.max(0, roleOptions.indexOf(selectedRole))
-                return (
-                  <View key={p.openid} className='debug-role-row'>
-                    <Text className='debug-player-name'>{p.seat + 1}. {p.nickname}</Text>
-                    <Picker
-                      mode='selector'
-                      range={roleOptionLabels}
-                      value={selectedIndex}
-                      onChange={(e) => {
-                        const nextRole = roleOptions[Number(e.detail.value)]
-                        if (!nextRole) return
-                        setDebugRoles((prev) => ({ ...prev, [p.openid]: nextRole }))
-                      }}
-                    >
-                      <View className={'debug-role-picker ' + ROLE_META[selectedRole].team}>
-                        <Text>{ROLE_META[selectedRole].name}</Text>
-                      </View>
-                    </Picker>
-                  </View>
-                )
-              })}
-          </View>
+          <DebugControls
+            room={room}
+            debugRoles={debugRoles}
+            roleOptions={roleOptions}
+            onRoleChange={(openid, role) => {
+              setDebugRoles((prev) => ({ ...prev, [openid]: role }))
+            }}
+          />
         )}
       </View>
 
