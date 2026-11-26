@@ -61,9 +61,15 @@ export function verifyToken(token: string): TokenPayload | null {
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
 
   try {
+    const metadata = JSON.parse(base64urlDecode(header).toString('utf8'));
     const data = JSON.parse(base64urlDecode(payload).toString('utf8')) as TokenPayload;
-    if (typeof data.exp !== 'number' || data.exp < Math.floor(Date.now() / 1000)) {
-      return null; // 过期了
+    if (
+      !metadata || metadata.alg !== 'HS256' || metadata.typ !== 'JWT' ||
+      !data || typeof data.sub !== 'string' || data.sub.trim() === '' ||
+      typeof data.exp !== 'number' || !Number.isFinite(data.exp) ||
+      data.exp <= Math.floor(Date.now() / 1000)
+    ) {
+      return null; // Invalid claims, header, or expiry.
     }
     return data;
   } catch {

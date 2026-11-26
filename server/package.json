@@ -7,7 +7,8 @@
     "dev": "tsx watch index.ts",
     "start": "tsx index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --require ./test/setup.cjs --import tsx --test --test-timeout=15000 test/*.test.ts",
+    "test:coverage": "node --require ./test/setup.cjs --import tsx --test --test-timeout=15000 --experimental-test-coverage --test-coverage-exclude=\"**/test/**\" --test-coverage-exclude=\"**/node_modules/**\" test/*.test.ts"
   },
   "keywords": [],
   "author": "",

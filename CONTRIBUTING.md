@@ -83,6 +83,8 @@ When introducing the PR workflow, add `.github/pull_request_template.md` with th
 
 ## 5. Validation and CI
 
+See the [testing baseline](docs/TESTING.md) for test setup, coverage commands, verified results, and known gaps.
+
 Run checks appropriate to the change from the repository root:
 
 ```bash
