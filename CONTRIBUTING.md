@@ -97,13 +97,13 @@ See the [README](README.md) and [local development guide](docs/LOCAL_DEVELOPMENT
 
 Add meaningful tests alongside behavior changes. Prioritize reconnection, private-role boundaries, host transfer, invalid operations, and terminal-state recovery. For documentation-only changes, inspect content, links, and formatting; application tests are not required.
 
-The intended CI policy is:
+The initial workflow and its verification limits are documented in [CI.md](docs/CI.md). The CI policy is:
 
 - During v0.1.0, run automated checks on pushes to `main` once CI is configured.
 - After adopting PRs, run checks when a PR is opened or updated, and on pushes to `main`.
 - Configure required checks and main-branch protection when introducing the PR workflow.
 
-A Git commit does not run tests automatically unless hooks are configured. CI workflows, required checks, and branch protection are separate configuration tasks; this document does not claim they are already enabled.
+A Git commit does not run tests automatically unless hooks are configured. The workflow configuration is present locally; remote execution is pending publication. Required checks and branch protection remain separate tasks for the transition to PR-based development.
 
 ## 6. Implementation Principles
 
