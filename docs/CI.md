@@ -13,7 +13,7 @@ npm test --workspace server
 npm run build:weapp --workspace client
 ```
 
-The root `package-lock.json` controls workspace installation and the npm download cache key. Do not run independent installs from `client/` or `server/` in CI. No dependency declarations or lockfiles were changed for this pipeline. `HUSKY=0` disables local Git-hook installation in CI; it does not skip package build scripts. Audit output is excluded from the installation step, not treated as a security audit pass.
+The root `package-lock.json` controls workspace installation and the npm download cache key. Do not run independent installs from `client/` or `server/` in CI. Dependency declarations and versions were preserved. The root lockfile was repaired to include missing SWC and Taro optional native packages for other platforms, after Ubuntu builds exposed macOS-only lock records. `HUSKY=0` disables local Git-hook installation in CI; it does not skip package build scripts. Audit output is excluded from the installation step, not treated as a security audit pass.
 
 Tests use the isolated configuration documented in [TESTING.md](TESTING.md). No real WeChat secrets, Redis service, AWS credentials, or deployment permissions are required. The backend runs through `tsx`; its type check serves as its compilation check, with no additional bundling introduced.
 
@@ -30,7 +30,7 @@ Validated an archive of committed `main` after merging `docs/english-prd`, witho
 - Failure probe: a temporary deliberately failing test made `npm test` exit nonzero; the probe was removed and was not added to the repository.
 - Workflow YAML, triggers, permissions, and absence of ignored failures: checked locally.
 
-These checks were run on macOS with Node 24.3.0/npm 11.4.2. They are not evidence of a successful GitHub-hosted Ubuntu run. Remote push/PR triggers, runner execution, and badge status remain pending until the workflow is published. Do not close Issue #5 on local checks alone.
+The local checks above ran on macOS with Node 24.3.0/npm 11.4.2. After publication, the [Ubuntu CI run](https://github.com/Glowworie-afk/Avalon/actions/runs/45800464785) passed installation, backend types, tests, and the WeChat build on commit `1b1a9f6`. Earlier failed runs correctly stopped on missing native binaries; the lockfile repair resolved them. Push triggering and GitHub-hosted success/failure reporting are verified. PR triggering is configured but has not yet been exercised. Issue #5 remains open for its deferred scope.
 
 ## Deliberately deferred checks
 
@@ -50,4 +50,4 @@ The original Issue #5 checklist is broader than this agreed minimal first stage.
 4. Verify PR updates trigger a run using a temporary validation branch. Put any deliberate failure probe only on that branch, confirm failure, then remove it and confirm success. Never merge the probe.
 5. After adopting PR-based development, configure the observed validation check as required and test that it blocks a failing PR.
 
-The README badge points at the workflow's `main` status and may show no status until publication. Retain this distinction when reporting completion.
+The README badge now reports the published workflow's `main` status. The publishing steps above remain a reference for future verification; PR-trigger verification and branch protection are still pending.

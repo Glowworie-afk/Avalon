@@ -103,7 +103,7 @@ The initial workflow and its verification limits are documented in [CI.md](docs/
 - After adopting PRs, run checks when a PR is opened or updated, and on pushes to `main`.
 - Configure required checks and main-branch protection when introducing the PR workflow.
 
-A Git commit does not run tests automatically unless hooks are configured. The workflow configuration is present locally; remote execution is pending publication. Required checks and branch protection remain separate tasks for the transition to PR-based development.
+A Git commit does not run tests automatically unless hooks are configured. The workflow is published and push-triggered execution has passed on GitHub; see CI.md for evidence and remaining checks. Required checks and branch protection remain separate tasks for the transition to PR-based development.
 
 ## 6. Implementation Principles
 
