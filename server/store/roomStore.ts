@@ -2,8 +2,8 @@
  * 房间存储。
  *
  * 按仓库选型说明：10 天单服务器 MVP 先用内存 Map，Redis 留口子。
- * 对外只暴露 async 的 get/save/delete/exists，内部用 Map 还是 Redis 对上层透明，
- * 将来换 Redis 只改这一个文件，ws / store 调用方零改动。
+ * 当前仅支持单进程。迁移外部存储时需同时审查并发更新、广播和连接路由，
+ * 不能仅替换 Map 就获得多实例支持。
  */
 
 import type { Room } from '@avalon/shared'

@@ -90,7 +90,7 @@ Run checks appropriate to the change from the repository root:
 ```bash
 npm test --workspace server
 npm run typecheck --workspace server
-npm run build:weapp --workspace client
+AVALON_API_ORIGIN=https://ci.invalid npm run build:weapp --workspace client
 ```
 
 See the [README](README.md) and [local development guide](docs/LOCAL_DEVELOPMENT.md) for setup and known client-check limitations. Report actual results; do not claim that unrun checks passed. Separate existing failures from regressions introduced by the change.

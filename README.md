@@ -19,12 +19,12 @@
 
 ## 本地运行
 
-需要 Node.js、npm、微信开发者工具。审计环境使用 Node v24.3.0 / npm 11.4.2；这只是已用环境，尚未定义或验证最低版本，也未验证全新安装。
+需要 Node.js、npm、微信开发者工具。审计环境使用 Node v24.3.0 / npm 11.4.2；项目通过 .nvmrc 固定 Node 24.3.0；已验证使用根锁文件执行 npm ci 的全新安装。
 
 在仓库根目录安装 npm workspaces 依赖：
 
 ```bash
-npm install
+npm ci
 ```
 
 首次运行且 `server/.env` 不存在时，将 `server/.env.example` 复制为 `server/.env`。本地联调设 `MOCK_LOGIN=true`，并设置自己的 `JWT_SECRET`。真实微信登录需 `MOCK_LOGIN=false` 与有效的 `WX_APPID`、`WX_SECRET`。不要提交真实凭证。
@@ -39,12 +39,12 @@ npm run dev
 
 ```bash
 # 终端二：从仓库根目录编译小程序
-npm run dev:weapp --workspace client
+AVALON_API_ORIGIN=http://localhost:3000 npm run dev:weapp --workspace client
 ```
 
 在微信开发者工具中导入 `client/`，构建产物位于 `client/dist/`。服务器默认监听 3000 端口；本地健康检查为 `http://localhost:3000/health`。
 
-**当前接线限制：** 客户端 `src/utils/request.ts` 的 `BASE_URL` 与 `src/utils/socket.ts` 的 `WS_BASE` 仍硬编码为远端地址，不会自动连到本地后端；`.env.*` 尚未接管这两个常量。进行本地联调前，需要将它们指向自己的本地服务（真机使用可访问的局域网地址）。这属于待修复的环境配置问题，本次文档迁移未改动常量。开发工具跳过合法域名检查仅用于本地调试；发布前需要 HTTPS/WSS 与正确的域名配置。
+**连接配置：** 使用构建时环境变量 `AVALON_API_ORIGIN`，HTTP 与 WebSocket 共用一处地址来源。开发时可设置 `http://localhost:3000`（真机使用可访问的局域网地址）；生产构建必须显式提供 HTTPS 地址，自动派生 WSS。具体命令见 [本地开发说明](docs/LOCAL_DEVELOPMENT.md)。
 
 ## 检查命令
 
@@ -53,7 +53,7 @@ npm run dev:weapp --workspace client
 ```bash
 npm test --workspace server
 npm run typecheck --workspace server
-npm run build:weapp --workspace client
+AVALON_API_ORIGIN=https://ci.invalid npm run build:weapp --workspace client
 ```
 
 客户端目前没有 `typecheck` npm script，可直接运行其已安装的编译器：

@@ -10,7 +10,7 @@ Steps run in order and fail immediately on errors:
 HUSKY=0 npm ci --no-audit --no-fund
 npm run typecheck --workspace server
 npm test --workspace server
-npm run build:weapp --workspace client
+AVALON_API_ORIGIN=https://ci.invalid npm run build:weapp --workspace client
 ```
 
 The root `package-lock.json` controls workspace installation and the npm download cache key. Do not run independent installs from `client/` or `server/` in CI. Dependency declarations and versions were preserved. The root lockfile was repaired to include missing SWC and Taro optional native packages for other platforms, after Ubuntu builds exposed macOS-only lock records. `HUSKY=0` disables local Git-hook installation in CI; it does not skip package build scripts. Audit output is excluded from the installation step, not treated as a security audit pass.
@@ -51,3 +51,5 @@ The original Issue #5 checklist is broader than this agreed minimal first stage.
 5. After adopting PR-based development, configure the observed validation check as required and test that it blocks a failing PR.
 
 The README badge now reports the published workflow's `main` status. The publishing steps above remain a reference for future verification; PR-trigger verification and branch protection are still pending.
+
+The build-only origin above is a deliberately non-routable placeholder. Production builds must supply a real HTTPS backend origin. Dependency cleanup removed unused direct dependencies without upgrading retained package versions.

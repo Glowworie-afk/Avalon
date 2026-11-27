@@ -1,3 +1,5 @@
+> 历史文档：以下内容保留原记录，部分进度和实现描述已过时。当前运行说明见 [根 README](../README.md)，产品范围见 [PRD](PRD.md)，进度见 [ROADMAP](ROADMAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)。
+
 # 阿瓦隆小程序 · 开发文档
 
 微信小程序版《阿瓦隆》发牌器：多人进同一房间、一键发牌、各自私密查看身份，含湖中仙女、兰斯洛特扩展。
@@ -8,7 +10,7 @@
 |---|---|
 | [Day1-开发日报](./Day1-开发日报.md) | 架构与技术栈、登录鉴权、数据模型与协议、WebSocket（四合一） |
 | [Day2-房间系统说明](./Day2-房间系统说明.md) | 建房/入房/准备/配置/开始，分享加入 |
-| [十天开发计划](./十天开发计划.md) | 逐日排期与选型说明 |
+| [十天开发计划（原文）](../AGENTS.md) | 逐日排期与选型说明 |
 
 ## 进度
 
@@ -26,7 +28,7 @@ Avalon/                      # npm workspaces 单仓
 ├── client/                  # 前端：Taro 4.2 + React 18（小程序，Vite 编译）
 │   └── src/
 │       ├── pages/           # index(首页) / register(注册) / create(建房) / room(房间)
-│       ├── components/      # RoleConfig(人数+开关+实时角色构成)
+│       ├── components/      # GameBoard / GameResults / RoleDeal / RoleVision
 │       └── utils/           # request / auth / profile / socket
 ├── server/                  # 后端：Node + Express + ws
 │   ├── http/                # login / profile（REST）
