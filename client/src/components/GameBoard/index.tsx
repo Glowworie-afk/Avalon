@@ -5,6 +5,8 @@ import { sendMessage } from '../../utils/socket'
 import {
   ClientEvent,
   MISSION_TEAM_SIZE,
+  FORCE_QUEST_AFTER_REJECTS,
+  teamSize,
   ROLE_META,
   failsRequired,
   type GameOverPayload,
@@ -14,6 +16,8 @@ import {
   type QuestResultPayload,
   type RoleInfo,
 } from '@avalon/shared'
+import GameResults from './GameResults'
+import RoleVision from '../RoleVision'
 import './index.scss'
 
 interface GameBoardProps {
@@ -33,8 +37,8 @@ export default function GameBoard({ room, myOpenid, roleInfo, questResult, gameO
   const isMyTurn = room.players[game.leaderSeat]?.openid === myOpenid
   const isTeamMember = me ? game.proposedTeam.includes(me.seat) : false
 
-  const questSizes = MISSION_TEAM_SIZE[room.config.playerCount] || [2, 3, 2, 3, 3]
-  const currentTeamSize = questSizes[game.round - 1] ?? 0
+  const questSizes = MISSION_TEAM_SIZE[room.config.playerCount] ?? []
+  const currentTeamSize = teamSize(room.config.playerCount, game.round)
   const leader = room.players.find((p) => p.seat === game.leaderSeat)
   const requiredFails = failsRequired(room.config.playerCount, game.round)
 
@@ -102,74 +106,7 @@ export default function GameBoard({ room, myOpenid, roleInfo, questResult, gameO
   const ladyHolder = room.players.find((p) => p.seat === game.ladyOfLakeHolder)
   const isLadyHolder = ladyHolder?.openid === myOpenid
 
-  if (gameOver) {
-    const revealedRoles = gameOver.revealedRoles ?? []
-    const goodRoles = revealedRoles.filter((p) => p.team === 'good')
-    const evilRoles = revealedRoles.filter((p) => p.team === 'evil')
-
-    const renderRoleColumn = (team: 'good' | 'evil', title: string, players: typeof revealedRoles) => (
-      <View className={'reveal-column ' + team}>
-        <View className='reveal-column-head'>
-          <Text className='reveal-column-title'>{title}</Text>
-          <Text className='reveal-column-count'>{players.length} 人</Text>
-        </View>
-        {players.map((p) => {
-          const meta = ROLE_META[p.role]
-          return (
-            <View key={p.openid} className='reveal-row'>
-              <Text className='reveal-seat'>{p.seat + 1}</Text>
-              <View className='reveal-identity'>
-                <Text className='reveal-player'>{p.nickname}</Text>
-                <Text className='reveal-role'>{meta.name}</Text>
-              </View>
-            </View>
-          )
-        })}
-      </View>
-    )
-
-    return (
-      <View className='game-board game-over-board'>
-        <View className={'game-over-hero ' + gameOver.winner}>
-          <Text className='game-over-kicker'>最终结算</Text>
-          <Text className='game-over-title'>
-            {gameOver.winner === 'good' ? '好人阵营胜利' : '坏人阵营胜利'}
-          </Text>
-          <Text className='game-over-reason'>{gameOver.reason}</Text>
-        </View>
-
-        <View className='final-score-panel'>
-          <View className='final-score-card success'>
-            <Text className='score-number'>{successCount}</Text>
-            <Text className='score-label'>任务成功</Text>
-          </View>
-          <View className='final-mission-track'>
-            {questSizes.map((size, index) => {
-              const result = game.questResults[index]
-              return (
-                <View key={index} className={'final-mission-dot ' + (result ?? 'pending')}>
-                  <Text className='final-round'>{index + 1}</Text>
-                  <Text className='final-size'>{size}人</Text>
-                </View>
-              )
-            })}
-          </View>
-          <View className='final-score-card fail'>
-            <Text className='score-number'>{failCount}</Text>
-            <Text className='score-label'>任务失败</Text>
-          </View>
-        </View>
-
-        <View className='role-reveal-panel'>
-          <Text className='role-reveal-title'>身份揭晓</Text>
-          <View className='role-reveal-columns'>
-            {renderRoleColumn('good', '好人阵营', goodRoles)}
-            {renderRoleColumn('evil', '坏人阵营', evilRoles)}
-          </View>
-        </View>
-      </View>
-    )
-  }
+  if (gameOver) return <GameResults room={room} gameOver={gameOver} />
 
   // 渲染总任务概览：每轮人数 + 成功/失败状态
   const renderMissionOverview = () => (
@@ -212,9 +149,9 @@ export default function GameBoard({ room, myOpenid, roleInfo, questResult, gameO
   // 渲染否决警戒线
   const renderRejectTrack = () => (
     <View className='reject-track'>
-      <Text className='reject-label'>两次否决后强制发车</Text>
+      <Text className='reject-label'>{FORCE_QUEST_AFTER_REJECTS} 次否决后强制发车</Text>
       <View className='dots'>
-        {[1, 2].map(num => (
+        {Array.from({ length: FORCE_QUEST_AFTER_REJECTS }, (_, index) => index + 1).map(num => (
           <View key={num} className={`dot ${game.rejectCount >= num ? 'danger' : ''}`} />
         ))}
       </View>
@@ -375,43 +312,9 @@ export default function GameBoard({ room, myOpenid, roleInfo, questResult, gameO
     )
   }
 
-  const getVisiblePlayers = () => {
-    if (!roleInfo) return []
-    if (roleInfo.knownEvil?.length) {
-      return roleInfo.knownEvil.map((openid) => ({ openid, label: '梅林视野', tone: 'evil' as const }))
-    }
-    if (roleInfo.merlinCandidates?.length) {
-      return roleInfo.merlinCandidates.map((openid) => ({ openid, label: '梅林候选', tone: 'mystery' as const }))
-    }
-    if (roleInfo.fellowEvil?.length) {
-      return roleInfo.fellowEvil.map((openid) => ({ openid, label: '邪恶同伙', tone: 'evil' as const }))
-    }
-    return []
-  }
-
-  const renderVisionPlayer = (item: { openid: string; label: string; tone: 'evil' | 'mystery' }) => {
-    const player = room.players.find((p) => p.openid === item.openid)
-    if (!player) return null
-    return (
-      <View key={item.openid} className={'role-vision-player ' + item.tone}>
-        <View className='role-vision-avatar'>
-          {player.avatarUrl ? (
-            <Image src={player.avatarUrl} className='role-vision-img' />
-          ) : (
-            <Text className='role-vision-fallback'>{player.nickname.slice(0, 1)}</Text>
-          )}
-          <Text className='role-vision-seat'>{player.seat + 1}</Text>
-        </View>
-        <Text className='role-vision-name'>{player.nickname}</Text>
-        <Text className='role-vision-label'>{item.label}</Text>
-      </View>
-    )
-  }
-
   const renderRoleCardOverlay = () => {
     if (!showRole) return null
     const roleMeta = roleInfo ? ROLE_META[roleInfo.role] : null
-    const visiblePlayers = getVisiblePlayers()
 
     return (
       <View className='role-card-mask' onClick={() => setShowRole(false)}>
@@ -423,16 +326,7 @@ export default function GameBoard({ room, myOpenid, roleInfo, questResult, gameO
           <Text className='role-card-team'>{roleInfo?.team === 'evil' ? '坏人阵营' : '好人阵营'}</Text>
           <Text className='role-card-desc'>{roleMeta?.desc ?? '身份信息尚未下发'}</Text>
 
-          <View className='role-vision-panel'>
-            <Text className='role-vision-title'>你能看到的身份信息</Text>
-            {visiblePlayers.length > 0 ? (
-              <View className='role-vision-list'>
-                {visiblePlayers.map((item) => renderVisionPlayer(item))}
-              </View>
-            ) : (
-              <Text className='role-vision-empty'>当前身份没有额外可见信息</Text>
-            )}
-          </View>
+          <RoleVision room={room} roleInfo={roleInfo} />
         </View>
       </View>
     )

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { View, Text, Button, Image } from '@tarojs/components'
+import { View, Text, Button } from '@tarojs/components'
 import { ROLE_META, type RoleInfo, type PublicRoom } from '@avalon/shared'
+import RoleVision from '../RoleVision'
 import './index.scss'
 
 interface RoleDealProps {
@@ -33,12 +34,6 @@ export default function RoleDeal({ room, roleInfo, onComplete }: RoleDealProps) 
     return () => clearInterval(timer)
   }, [])
 
-  // 获取我能看到的人的具体信息（头像、昵称、座位号）
-  const knownPlayers = roleInfo.knownEvil?.map(openid => {
-    const p = room.players.find(x => x.openid === openid)
-    return p
-  }).filter(Boolean)
-
   return (
     <View className='role-deal-container'>
       <View className='star-bg' /> {/* 模拟暗黑星空背景 */}
@@ -61,27 +56,7 @@ export default function RoleDeal({ room, roleInfo, onComplete }: RoleDealProps) 
           <Text className='role-name'>{roleMeta.name}</Text>
           <Text className='role-desc'>{roleMeta.desc}</Text>
 
-          {/* 视野展示区：显示我能看到的人 */}
-          {knownPlayers && knownPlayers.length > 0 && (
-            <View className='vision-area'>
-              <Text className='vision-title'>你眼中的特殊标记：</Text>
-              <View className='vision-list'>
-                {knownPlayers.map(p => (
-                  <View key={p!.openid} className='target-player'>
-                    <View className='avatar-wrap'>
-                      {p!.avatarUrl ? (
-                        <Image src={p!.avatarUrl} className='avatar' />
-                      ) : (
-                        <Text className='avatar-fallback'>{p!.nickname.slice(0, 1)}</Text>
-                      )}
-                      <Text className='seat-badge'>{p!.seat + 1}</Text>
-                    </View>
-                    <Text className='target-name'>{p!.nickname}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
+          <RoleVision room={room} roleInfo={roleInfo} />
 
           <Button className='confirm-btn' onClick={onComplete}>
             确认身份并入局
