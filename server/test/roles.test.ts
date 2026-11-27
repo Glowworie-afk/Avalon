@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildRoleList,
   canUseLancelot,
+  canUseLadyOfLake,
   groupRolesByTeam,
   TEAM_SIZE,
   ROLE_META,
@@ -50,7 +51,12 @@ test('兰斯洛特：5 人开关无效（人数不够，不应出现兰斯洛特
   assert.ok(!roles.includes('evil_lancelot'));
 });
 
-test('湖中仙女不改变角色构成', () => {
+test('湖中仙女：7 人及以上可开，但不改变角色构成', () => {
+  assert.equal(canUseLadyOfLake(5), false);
+  assert.equal(canUseLadyOfLake(6), false);
+  assert.equal(canUseLadyOfLake(7), true);
+  assert.equal(canUseLadyOfLake(10), true);
+
   const base = buildRoleList(8);
   const withLake = buildRoleList(8, { useLadyOfLake: true });
   assert.deepEqual(withLake, base);

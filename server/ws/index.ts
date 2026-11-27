@@ -7,6 +7,7 @@ import {
   makeMessage,
   toPublicRoom,
   canUseLancelot,
+  canUseLadyOfLake,
   MIN_PLAYERS,
   MAX_PLAYERS,
   type Message,
@@ -65,14 +66,15 @@ const DEFAULT_CONFIG: GameConfig = {
   useLadyOfLake: false,
 };
 
-/** 校正配置：人数夹到合法区间、人数不足时强制关掉兰斯洛特 */
+/** 校正配置：人数夹到合法区间、人数不足时强制关掉扩展机制 */
 function normalizeConfig(input: Partial<GameConfig>, floor = MIN_PLAYERS): GameConfig {
   const merged = { ...DEFAULT_CONFIG, ...input };
   let playerCount = Math.round(merged.playerCount);
   if (Number.isNaN(playerCount)) playerCount = floor;
   playerCount = Math.min(MAX_PLAYERS, Math.max(floor, playerCount));
   const useLancelot = merged.useLancelot && canUseLancelot(playerCount);
-  return { playerCount, useLancelot, useLadyOfLake: !!merged.useLadyOfLake };
+  const useLadyOfLake = merged.useLadyOfLake && canUseLadyOfLake(playerCount);
+  return { playerCount, useLancelot, useLadyOfLake };
 }
 
 function parseToken(url: string | undefined): string {
@@ -535,7 +537,7 @@ function removePlayer(room: Room, openid: string): void {
   if (room.players.length === 0) return;
   room.players.forEach((p, i) => {
     p.seat = i;
-    p.isHost = false;
+    p.isHost = p.openid === room.hostOpenid;
   });
   if (wasHost) {
     const newHost = room.players[0]!;

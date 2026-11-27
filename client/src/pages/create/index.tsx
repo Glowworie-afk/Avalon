@@ -2,7 +2,14 @@ import { useState, useMemo } from 'react'
 import { View, Text, Button, Switch } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 // 直接引用 shared 提供的配置和工具函数[cite: 15]
-import { buildRoleList, groupRolesByTeam, ROLE_META, type GameConfig } from '@avalon/shared'
+import {
+  buildRoleList,
+  groupRolesByTeam,
+  ROLE_META,
+  canUseLancelot,
+  canUseLadyOfLake,
+  type GameConfig,
+} from '@avalon/shared'
 import './index.scss'
 
 // 辅助函数：将相同角色合并，用于展示 "X2" "X3"
@@ -30,10 +37,8 @@ export default function Create() {
   const handleCountChange = (num: number) => {
     setConfig(prev => {
       const next = { ...prev, playerCount: num }
-      if (num < 7) {
-        next.useLancelot = false
-        next.useLadyOfLake = false
-      }
+      if (!canUseLancelot(num)) next.useLancelot = false
+      if (!canUseLadyOfLake(num)) next.useLadyOfLake = false
       return next
     })
   }
@@ -42,9 +47,10 @@ export default function Create() {
   const handleExtensionToggle = (ext: 'useLancelot' | 'useLadyOfLake', value: boolean) => {
     setConfig(prev => {
       const next = { ...prev, [ext]: value }
-      if (value && next.playerCount < 7) {
-        next.playerCount = 7
-      }
+      const needsMorePlayers = ext === 'useLancelot'
+        ? !canUseLancelot(next.playerCount)
+        : !canUseLadyOfLake(next.playerCount)
+      if (value && needsMorePlayers) next.playerCount = 7
       return next
     })
   }
@@ -132,7 +138,7 @@ export default function Create() {
           <View className='ext-item'>
             <View className='ext-info'>
               <Text className='ext-name'>湖中仙女</Text>
-              <Text className='ext-desc'>查验阵营 (适合7人以上)</Text>
+              <Text className='ext-desc'>查验阵营（7 人以上可用）</Text>
             </View>
             <Switch 
               color="#eab308" 

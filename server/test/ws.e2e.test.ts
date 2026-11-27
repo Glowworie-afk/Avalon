@@ -183,6 +183,28 @@ test('房间满员后继续加入会被拒绝', async () => {
   extra.close();
 });
 
+test('建房和改配置会按人数关闭不可用扩展', async () => {
+  const host = new Client(signToken('hostA'));
+  await host.open();
+  host.send(ClientEvent.CREATE_ROOM, {
+    config: { playerCount: 6, useLancelot: true, useLadyOfLake: true },
+  });
+  const created = room(await host.waitFor(ServerEvent.ROOM_UPDATE));
+  assert.equal(created.config.playerCount, 6);
+  assert.equal(created.config.useLancelot, false);
+  assert.equal(created.config.useLadyOfLake, false);
+
+  host.send(ClientEvent.UPDATE_CONFIG, {
+    config: { playerCount: 7, useLancelot: true, useLadyOfLake: true },
+  });
+  const updated = room(await host.waitFor(ServerEvent.ROOM_UPDATE));
+  assert.equal(updated.config.playerCount, 7);
+  assert.equal(updated.config.useLancelot, true);
+  assert.equal(updated.config.useLadyOfLake, true);
+
+  host.close();
+});
+
 test('只有房主能改配置；非房主被拒', async () => {
   const host = new Client(signToken('hostA'));
   await host.open();
@@ -303,4 +325,25 @@ test('房主退出后房主转移给下一位', async () => {
 
   host.close();
   guest.close();
+});
+
+test('guest departure preserves host controls and reseats remaining players', async t => {
+  const host = new Client(signToken('hostA'));
+  t.after(() => host.close());
+  await host.open();
+  host.send(ClientEvent.CREATE_ROOM, { config: { playerCount: 5 } });
+  const roomId = room(await host.waitFor(ServerEvent.ROOM_UPDATE)).roomId;
+  const guest = new Client(signToken('guestB'));
+  t.after(() => guest.close());
+  await guest.open();
+  guest.send(ClientEvent.JOIN_ROOM, { roomId });
+  await guest.waitFor(ServerEvent.ROOM_UPDATE);
+  await host.waitFor(ServerEvent.ROOM_UPDATE);
+  guest.send(ClientEvent.LEAVE_ROOM, {});
+  const view = room(await host.waitFor(ServerEvent.ROOM_UPDATE));
+  assert.equal(view.hostOpenid, 'hostA');
+  assert.equal(view.players.length, 1);
+  assert.equal(view.players[0]!.isHost, true);
+  assert.equal(view.players[0]!.isReady, true);
+  assert.equal(view.players[0]!.seat, 0);
 });

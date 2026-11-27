@@ -7,7 +7,7 @@
  *
  * 阿瓦隆官方好/坏人数是固定的（见 TEAM_SIZE）；具体配哪些特殊角色这里给一套
  * 合理的基础局默认。兰斯洛特只有 7 人及以上才有可替换的填充坏人，故 <7 人禁用。
- * 湖中仙女是令牌机制，不改变任何角色构成。
+ * 湖中仙女是 7 人及以上才可开启的令牌机制，不改变任何角色构成。
  */
 
 import type { Role, Team, GameConfig } from './types'
@@ -63,11 +63,16 @@ export function canUseLancelot(count: number): boolean {
   return (EVIL_EXTRA[count]?.length ?? 0) > 0
 }
 
+/** 湖中仙女只在 7 人及以上开启，避免小局令牌信息过强 */
+export function canUseLadyOfLake(count: number): boolean {
+  return count >= 7 && count <= MAX_PLAYERS
+}
+
 /**
  * 生成某人数下的完整角色池（顺序：先好后坏）。
  * - 基础局：好 = 梅林 + 派西维尔 + 若干忠臣；坏 = 莫甘娜 + 刺客 + 填充。
  * - useLancelot（7 人起）：一个忠臣换成好兰斯洛特，一个填充坏人换成坏兰斯洛特，人数不变。
- * - useLadyOfLake：不影响角色构成。
+ * - useLadyOfLake（7 人起）：不影响角色构成。
  * 人数非法（不在 5–10）时返回空数组。
  */
 export function buildRoleList(count: number, config?: Partial<GameConfig>): Role[] {

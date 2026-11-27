@@ -274,3 +274,129 @@ test('5 人开局 → 非队长组队被拒', async () => {
   host.close();
   guests.forEach((g) => g.close());
 });
+
+
+test('两次否决后，第三次队长提案通过 WebSocket 强制进入任务阶段', async () => {
+  for (let i = 0; i < 5; i++) await saveUser(`p${i}`, { nickname: `玩家${i}`, avatarUrl: '' });
+
+  const host = new Client(signToken('p0'));
+  await host.open();
+  host.send(ClientEvent.CREATE_ROOM, { config: { playerCount: 5 } });
+  const roomId = roomOf(await host.waitFor(isType(ServerEvent.ROOM_UPDATE))).roomId;
+
+  const clients = [host];
+  for (let i = 1; i < 5; i++) {
+    const c = new Client(signToken(`p${i}`));
+    await c.open();
+    c.send(ClientEvent.JOIN_ROOM, { roomId });
+    c.send(ClientEvent.TOGGLE_READY, {});
+    clients.push(c);
+  }
+
+  await host.waitFor(
+    (m) => m.type === ServerEvent.ROOM_UPDATE &&
+      roomOf(m).players.length === 5 && roomOf(m).players.every((p) => p.isReady),
+    4000,
+  );
+  host.send(ClientEvent.START_GAME, {});
+  await host.waitFor(isType(ServerEvent.GAME_STARTED));
+  await host.waitFor((m) => m.type === ServerEvent.ROOM_UPDATE && roomOf(m).status === 'playing');
+
+  for (let i = 0; i < 2; i++) {
+    clients[i]!.send(ClientEvent.PROPOSE_TEAM, { seats: [0, 1] });
+    await host.waitFor(isType(ServerEvent.PHASE_CHANGE));
+    for (const c of clients) c.send(ClientEvent.VOTE, { approve: false });
+    const result = (await host.waitFor(isType(ServerEvent.VOTE_RESULT))).payload as VoteResultPayload;
+    assert.equal(result.approved, false);
+    assert.equal(result.rejectCount, i + 1);
+    assert.equal(result.leaderSeat, i + 1);
+    const afterReject = roomOf(
+      await host.waitFor((m) => m.type === ServerEvent.ROOM_UPDATE && roomOf(m).game?.phase === 'team_building' && roomOf(m).game?.rejectCount === i + 1),
+    );
+    assert.equal(afterReject.game!.leaderSeat, i + 1);
+  }
+
+  clients[2]!.send(ClientEvent.PROPOSE_TEAM, { seats: [0, 1] });
+  const forced = roomOf(
+    await host.waitFor((m) => m.type === ServerEvent.ROOM_UPDATE && roomOf(m).game?.phase === 'quest'),
+  );
+  assert.equal(forced.game!.rejectCount, 0);
+  assert.deepEqual(forced.game!.proposedTeam, [0, 1]);
+
+  clients.forEach((c) => c.close());
+});
+
+test('湖中仙女查验结果只发给持有者，并在查验后进入下一轮', async () => {
+  for (let i = 0; i < 7; i++) await saveUser(`p${i}`, { nickname: `玩家${i}`, avatarUrl: '' });
+
+  const host = new Client(signToken('p0'));
+  await host.open();
+  host.send(ClientEvent.CREATE_ROOM, { config: { playerCount: 7, useLadyOfLake: true } });
+  const roomId = roomOf(await host.waitFor(isType(ServerEvent.ROOM_UPDATE))).roomId;
+
+  const clients = [host];
+  for (let i = 1; i < 7; i++) {
+    const c = new Client(signToken(`p${i}`));
+    await c.open();
+    c.send(ClientEvent.JOIN_ROOM, { roomId });
+    c.send(ClientEvent.TOGGLE_READY, {});
+    clients.push(c);
+  }
+
+  await host.waitFor(
+    (m) => m.type === ServerEvent.ROOM_UPDATE &&
+      roomOf(m).players.length === 7 && roomOf(m).players.every((p) => p.isReady),
+    4000,
+  );
+  host.send(ClientEvent.START_GAME, {});
+  const roleMessages = await Promise.all(clients.map((c) => c.waitFor(isType(ServerEvent.ROLE_INFO))));
+  await host.waitFor(isType(ServerEvent.GAME_STARTED));
+  await host.waitFor((m) => m.type === ServerEvent.ROOM_UPDATE && roomOf(m).status === 'playing');
+
+  const badTargetIndex = roleMessages.findIndex((m, index) => {
+    const info = (m.payload as { info: { team: string } }).info;
+    return index !== 0 && info.team === 'evil';
+  });
+  assert.ok(badTargetIndex > 0, '应能找到一个非持有者坏人用于查验');
+
+  for (let round = 1; round <= 2; round++) {
+    clients[round - 1]!.send(ClientEvent.PROPOSE_TEAM, { seats: round === 1 ? [0, 1] : [0, 1, 2] });
+    await host.waitFor(isType(ServerEvent.PHASE_CHANGE));
+    for (const c of clients) c.send(ClientEvent.VOTE, { approve: true });
+    const vote = (await host.waitFor(isType(ServerEvent.VOTE_RESULT))).payload as VoteResultPayload;
+    assert.equal(vote.approved, true);
+    host.send(ClientEvent.QUEST_ACTION, { fail: false });
+    clients[1]!.send(ClientEvent.QUEST_ACTION, { fail: false });
+    if (round === 2) clients[2]!.send(ClientEvent.QUEST_ACTION, { fail: false });
+    const quest = (await host.waitFor(isType(ServerEvent.QUEST_RESULT))).payload as QuestResultPayload;
+    assert.equal(quest.result, 'success');
+  }
+
+  const ladyPhase = roomOf(
+    await host.waitFor((m) => m.type === ServerEvent.ROOM_UPDATE && roomOf(m).game?.phase === 'lady'),
+  );
+  assert.equal(ladyPhase.game!.round, 2);
+  assert.equal(ladyPhase.game!.ladyOfLakeHolder, 0);
+
+  host.send(ClientEvent.LADY_INSPECT, { targetOpenid: `p${badTargetIndex}` });
+  const ladyResult = await host.waitFor(isType(ServerEvent.LADY_RESULT));
+  assert.deepEqual(ladyResult.payload, {
+    holderSeat: 0,
+    targetOpenid: `p${badTargetIndex}`,
+    targetNickname: `玩家${badTargetIndex}`,
+    targetSeat: badTargetIndex,
+    targetTeam: 'evil',
+    nextHolderSeat: badTargetIndex,
+  });
+
+  const afterInspect = roomOf(
+    await host.waitFor((m) => m.type === ServerEvent.ROOM_UPDATE && roomOf(m).game?.phase === 'team_building' && roomOf(m).game?.round === 3),
+  );
+  assert.equal(afterInspect.game!.ladyOfLakeHolder, badTargetIndex);
+  assert.deepEqual(afterInspect.game!.ladyHistory, [0, badTargetIndex]);
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(clients.slice(1).some((c) => c.messages().some((m) => m.type === ServerEvent.LADY_RESULT)), false);
+
+  clients.forEach((c) => c.close());
+});

@@ -272,9 +272,9 @@ test('兰斯洛特：第 3 轮开始前抽到切换牌会互换当前阵营', ()
 });
 
 test('湖中仙女：第 2 轮后进入查验，查验后传递令牌并进入下一轮', () => {
-  const room = makeRoom(5);
+  const room = makeRoom(7);
   room.config.useLadyOfLake = true;
-  room.players.forEach((p, i) => { p.team = i < 3 ? 'good' : 'evil'; });
+  room.players.forEach((p, i) => { p.team = i < 4 ? 'good' : 'evil'; });
   initGame(room);
   assert.equal(room.game!.ladyOfLakeHolder, 0);
   assert.deepEqual(room.game!.ladyHistory, [0]);
@@ -291,12 +291,12 @@ test('湖中仙女：第 2 轮后进入查验，查验后传递令牌并进入�
   assert.equal(room.game!.phase, 'lady');
   assert.equal(room.game!.round, 2);
 
-  const inspected = inspectLadyOfLake(room, 'p0', 'p3');
+  const inspected = inspectLadyOfLake(room, 'p0', 'p4');
   assert.equal(inspected.ok, true);
   if (!inspected.ok) throw new Error('unreachable');
   assert.equal(inspected.result.targetTeam, 'evil');
-  assert.equal(room.game!.ladyOfLakeHolder, 3);
-  assert.deepEqual(room.game!.ladyHistory, [0, 3]);
+  assert.equal(room.game!.ladyOfLakeHolder, 4);
+  assert.deepEqual(room.game!.ladyHistory, [0, 4]);
   assert.equal(room.game!.round, 3);
   assert.equal(room.game!.phase, 'team_building');
 });
@@ -344,4 +344,100 @@ test('连续两次否决后，第三次组队提案强制进入任务阶段', ()
   assert.equal(room.game!.phase, 'quest');
   assert.equal(room.game!.rejectCount, 0);
   assert.deepEqual(room.game!.proposedTeam, [0, 1]);
+});
+
+
+test('任务轨道：三次失败后直接结束，坏人获胜', () => {
+  const room = makeRoom(5);
+  room.players.forEach((p, i) => { p.team = i === 0 ? 'evil' : 'good'; });
+  initGame(room);
+
+  let final: ReturnType<typeof submitQuestAction> | undefined;
+  for (let round = 1; round <= 3; round++) {
+    const seats = [0, ...Array.from({ length: teamSize(room.config.playerCount, round) - 1 }, (_, i) => i + 1)];
+    assert.equal(proposeTeam(room, leaderOpenid(room), seats).ok, true);
+    for (const p of room.players) castVote(room, p.openid, true);
+    for (const seat of seats) {
+      const player = room.players.find((p) => p.seat === seat)!;
+      final = submitQuestAction(room, player.openid, player.team === 'evil');
+    }
+  }
+
+  assert.equal(final?.ok, true);
+  if (!final?.ok || final.tally.status !== 'resolved') throw new Error('unreachable');
+  assert.deepEqual(room.game!.questResults, ['fail', 'fail', 'fail']);
+  assert.equal(room.game!.phase, 'over');
+  assert.equal(room.status, 'finished');
+  assert.deepEqual(final.tally.gameOver, {
+    winner: 'evil',
+    reason: '三次任务失败，坏人阵营获胜',
+  });
+});
+
+test('刺杀：刺客命中梅林后坏人获胜', () => {
+  const room = makeRoom(5);
+  room.players[0]!.role = 'assassin';
+  room.players[0]!.team = 'evil';
+  room.players[1]!.role = 'merlin';
+  room.players[1]!.team = 'good';
+  initGame(room);
+  room.game!.phase = 'assassin';
+
+  const result = executeAssassination(room, 'p0', 'p1');
+  assert.equal(result.ok, true);
+  if (!result.ok) throw new Error('unreachable');
+  assert.deepEqual(result.gameOver, {
+    winner: 'evil',
+    reason: '刺杀成功！刺客精准识破了梅林，坏人阵营绝地翻盘！',
+  });
+  assert.equal(room.game!.phase, 'over');
+  assert.equal(room.status, 'finished');
+});
+
+test('任务执行：非队员不能交牌，队员不能重复交牌', () => {
+  const room = makeRoom(5);
+  initGame(room);
+  proposeTeam(room, 'p0', [0, 1]);
+  for (const p of room.players) castVote(room, p.openid, true);
+
+  assert.deepEqual(submitQuestAction(room, 'p2', false), { ok: false, error: '你不在本轮任务队伍中' });
+  assert.deepEqual(submitQuestAction(room, 'p0', false), { ok: true, tally: { status: 'pending' } });
+  assert.deepEqual(submitQuestAction(room, 'p0', false), { ok: false, error: '你已经提交过任务牌了' });
+});
+
+test('湖中仙女：只有持有者能查验，且不能查验自己或历史持有者', () => {
+  const room = makeRoom(7);
+  room.config.useLadyOfLake = true;
+  room.players.forEach((p, i) => { p.team = i < 4 ? 'good' : 'evil'; });
+  initGame(room);
+  room.game!.phase = 'lady';
+
+  assert.deepEqual(inspectLadyOfLake(room, 'p1', 'p4'), { ok: false, error: '只有湖中仙女持有者可以查验' });
+  assert.deepEqual(inspectLadyOfLake(room, 'p0', 'p0'), { ok: false, error: '不能查验自己' });
+
+  room.game!.ladyHistory.push(4);
+  assert.deepEqual(inspectLadyOfLake(room, 'p0', 'p4'), { ok: false, error: '不能查验曾经持有过湖中仙女的玩家' });
+});
+
+test('兰斯洛特：抽到 stay 卡会记录事件但不切换阵营', () => {
+  const room = makeRoom(7);
+  room.config.useLancelot = true;
+  room.players.forEach((p, i) => { p.team = i < 4 ? 'good' : 'evil'; });
+  room.players[0]!.role = 'good_lancelot';
+  room.players[4]!.role = 'evil_lancelot';
+  initGame(room, () => 0);
+  room.game!.round = 2;
+
+  proposeTeam(room, 'p0', [0, 1, 2]);
+  for (const p of room.players) castVote(room, p.openid, true);
+  submitQuestAction(room, 'p0', false);
+  submitQuestAction(room, 'p1', false);
+  const last = submitQuestAction(room, 'p2', false);
+
+  assert.equal(last.ok, true);
+  if (!last.ok || last.tally.status !== 'resolved') throw new Error('unreachable');
+  assert.deepEqual(last.tally.lancelotEvent, { round: 3, switched: false });
+  assert.equal(room.players[0]!.team, 'good');
+  assert.equal(room.players[4]!.team, 'evil');
+  assert.deepEqual(room.game!.lancelotHistory, [{ round: 3, switched: false }]);
 });
