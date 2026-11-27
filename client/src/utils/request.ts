@@ -10,7 +10,7 @@ import Taro from '@tarojs/taro';
 // 后端地址。本地用微信开发者工具调试时，记得勾上
 // "详情 -> 本地设置 -> 不校验合法域名"，否则 http://localhost 会被拦。
 // 正式上线要换成 https 域名，并在小程序后台配置 request 合法域名。
-const BASE_URL = 'http://118.139.9.191:3000';
+const BASE_URL = __API_ORIGIN__;
 
 const TOKEN_KEY = 'token';
 

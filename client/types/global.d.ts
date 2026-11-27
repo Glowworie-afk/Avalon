@@ -27,3 +27,6 @@ declare namespace NodeJS {
 }
 
 
+
+declare const __API_ORIGIN__: string;
+declare const __WS_ORIGIN__: string;

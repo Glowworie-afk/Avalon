@@ -12,7 +12,7 @@ import { makeMessage, type Message, type EventType } from '@avalon/shared'
  */
 
 // 与后端保持一致：本地 ws://localhost:3000，上线换成 wss://你的域名
-const WS_BASE = 'ws://118.139.9.191:3000'
+const WS_BASE = __WS_ORIGIN__
 
 type Listener = (msg: Message) => void
 

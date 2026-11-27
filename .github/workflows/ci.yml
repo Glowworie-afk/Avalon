@@ -21,6 +21,8 @@ jobs:
     timeout-minutes: 20
     env:
       HUSKY: '0'
+      # Build-only placeholder; CI does not connect to a deployed backend.
+      AVALON_API_ORIGIN: https://ci.invalid
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

@@ -3,6 +3,7 @@ import { searchForWorkspaceRoot } from 'vite'
 
 import devConfig from './dev'
 import prodConfig from './prod'
+import { backendEndpoints } from './backend'
 
 // 让 Vite 能消费 monorepo 里软链接进来的 @avalon/shared（原始 .ts）：
 // - fs.allow 放行项目根之外（shared 在 client/ 外面）
@@ -18,7 +19,8 @@ const sharedSupportPlugin = {
 }
 
 // https://taro-docs.jd.com/docs/next/config#defineconfig-辅助函数
-export default defineConfig<'vite'>(async (merge, { command, mode }) => {
+export default defineConfig<'vite'>(async (merge) => {
+  const backend = backendEndpoints(process.env.AVALON_API_ORIGIN, process.env.NODE_ENV !== 'development')
   const baseConfig: UserConfigExport<'vite'> = {
     projectName: 'client',
     date: '2026-6-12',
@@ -35,6 +37,8 @@ export default defineConfig<'vite'>(async (merge, { command, mode }) => {
       "@tarojs/plugin-generator"
     ],
     defineConstants: {
+      __API_ORIGIN__: JSON.stringify(backend.http),
+      __WS_ORIGIN__: JSON.stringify(backend.ws),
     },
     copy: {
       patterns: [
